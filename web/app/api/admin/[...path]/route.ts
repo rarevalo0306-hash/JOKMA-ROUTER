@@ -1,8 +1,15 @@
+import { isAllowedEmail } from "@/lib/allowlist";
 import { apiBase, readEnv } from "@/lib/env";
+import { readCookie, readSession, SESSION_COOKIE } from "@/lib/session";
 
 type Context = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: Request, context: Context) {
+  const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE);
+  const session = await readSession(token, readEnv("AUTH_SECRET"));
+  if (!session || !isAllowedEmail(session.email, readEnv("PANEL_ALLOWED_EMAILS"))) {
+    return Response.json({ detail: "No autorizado" }, { status: 401 });
+  }
   const key = readEnv("ADMIN_API_KEY");
   if (!key) {
     return Response.json(
