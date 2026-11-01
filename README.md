@@ -42,7 +42,8 @@ Postgres 16 local, luego:
 cp backend/.env.example backend/.env
 cp web/.env.example web/.env.local
 # Mismo ROUTER_SECRET_KEY, ADMIN_API_KEY y DATABASE_URL en backend/.env.
-# En web/.env.local: API_INTERNAL_URL=http://127.0.0.1:8000 y el mismo ADMIN_API_KEY.
+# En web/.env.local: API_INTERNAL_URL=http://127.0.0.1:8000, el mismo ADMIN_API_KEY,
+# AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, AUTH_URL y PANEL_ALLOWED_EMAILS.
 
 cd backend
 python -m venv .venv && . .venv/bin/activate
@@ -106,3 +107,4 @@ cd backend && pip install -r requirements-dev.txt && pytest
 - **Latencia.** Milisegundos hasta que termina el stream, no el tiempo hasta el primer token.
 - **Respaldo.** Solo el primer modelo habilitado de la lista, y solo si el primario falla antes de abrir un 200. Un 400 no reintenta. Un adaptador sin implementar (501) tampoco.
 - **Admin.** `Authorization: Bearer` con `ADMIN_API_KEY`. El navegador llama a `/api/admin` de Next, que añade la clave en el servidor. No va en `NEXT_PUBLIC_`.
+- **Panel.** `https://router.jokma.app` pide sesión. El inicio es Google OAuth (`AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`) y solo entran los correos de `PANEL_ALLOWED_EMAILS`. Si esa variable no existe, entra únicamente `rarevalo0306@gmail.com`. La URI de redirección en Google Cloud es `https://router.jokma.app/api/auth/callback/google`. Las claves `ak_…` del gateway no cambian.

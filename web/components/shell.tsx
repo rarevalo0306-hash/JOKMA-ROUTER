@@ -12,9 +12,11 @@ const LINKS = [
 
 export function Shell({
   online,
+  email,
   children,
 }: {
   online: boolean;
+  email: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -47,6 +49,12 @@ export function Shell({
             );
           })}
         </nav>
+        <form action="/api/auth/signout" method="post" className="mt-6">
+          <p className="mb-2 truncate text-xs text-muted">{email}</p>
+          <button type="submit" className="rounded-full px-3 py-2 text-sm text-paper hover:bg-panel">
+            Salir
+          </button>
+        </form>
       </aside>
       <div className="min-w-0">
         <p
