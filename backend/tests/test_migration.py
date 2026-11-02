@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 import asyncpg
 import pytest
@@ -50,7 +51,10 @@ async def test_migration_applies_on_postgres():
     url = f"postgresql://ubuntu@/{name}?host=/var/run/postgresql"
     try:
         applied = await apply_migrations(url, SQL.parent)
-        assert applied == [SQL.name]
+        assert applied == [
+            "20261101043500_init_gateway.sql",
+            "20261102003400_current_chat_models.sql",
+        ]
         again = await apply_migrations(url, SQL.parent)
         assert again == []
         connection = await asyncpg.connect(user="ubuntu", database=name, host="/var/run/postgresql")
@@ -90,6 +94,45 @@ async def test_migration_applies_on_postgres():
             """
         )
         assert public_id == "local/llama3.2-3b"
+        catalog = {
+            row["public_id"]: (row["enabled"], row["input_per_million"], row["output_per_million"])
+            for row in await connection.fetch(
+                """
+                select providers.name || '/' || models.name as public_id,
+                       models.enabled,
+                       model_prices.input_per_million,
+                       model_prices.output_per_million
+                from models
+                join providers on providers.id = models.provider_id
+                join model_prices on model_prices.model_id = models.id
+                where providers.name in ('openai', 'anthropic')
+                """
+            )
+        }
+        expected = {
+            "openai/gpt-6-astra": (True, 10, 50),
+            "openai/gpt-6.1-sol": (True, 2, 10),
+            "openai/gpt-6.1-terra": (True, 1, 5),
+            "openai/gpt-6-luna": (True, Decimal("0.10"), Decimal("0.50")),
+            "openai/gpt-4.1": (True, 2, 8),
+            "openai/o3": (True, 2, 8),
+            "openai/gpt-4o": (True, Decimal("2.5"), 10),
+            "anthropic/claude-fable-5-1": (True, 10, 50),
+            "anthropic/claude-opus-5-5": (True, 4, 20),
+            "anthropic/claude-sonnet-5-5": (True, 2, 10),
+            "anthropic/claude-haiku-5-5": (True, Decimal("0.10"), Decimal("0.50")),
+            "anthropic/claude-sonnet-4-5": (True, 3, 15),
+        }
+        def money(value):
+            return Decimal(value).quantize(Decimal("0.000001"))
+
+        for public_id, (enabled, inp, out) in expected.items():
+            got_enabled, got_in, got_out = catalog[public_id]
+            assert got_enabled is enabled
+            assert money(got_in) == money(inp)
+            assert money(got_out) == money(out)
+        assert "anthropic/claude-opus-4-1" not in catalog
+        assert await connection.fetchval("select enabled from providers where name = 'openai'") is False
         comment = await connection.fetchval(
             """
             select col_description('providers'::regclass, attnum)
