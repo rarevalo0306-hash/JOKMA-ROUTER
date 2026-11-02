@@ -438,6 +438,36 @@ async def test_stub_adapter_is_not_called_upstream(app, client):
     assert "not implemented" in response.json()["error"]["message"]
 
 
+async def test_video_provider_is_not_a_chat_route(app, client):
+    provider = await create_provider(
+        client,
+        name="sora",
+        adapter="video",
+        base_url="https://platform.openai.com/api-keys",
+        api_key="video-placeholder",
+        enabled=True,
+    )
+    await create_model(client, provider["id"], name="sora-2", alias=None)
+    key = await create_key(client)
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, content=b"{}")
+
+    await install_mock(app, handler)
+    response = await client.post(
+        "/v1/chat/completions",
+        json=chat("sora/sora-2", stream=False),
+        headers={"Authorization": f"Bearer {key['raw_key']}"},
+    )
+    assert response.status_code == 404
+    assert calls == []
+    listed = await client.get("/v1/models", headers={"Authorization": f"Bearer {key['raw_key']}"})
+    assert listed.status_code == 200
+    assert all(item["id"] != "sora/sora-2" for item in listed.json()["data"])
+
+
 async def test_respx_openai_non_stream_shape(app, client):
     """respx covers the same OpenAI path as the httpx mock transport."""
     provider = await create_provider(client, api_key="sk-respx")

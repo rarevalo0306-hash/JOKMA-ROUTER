@@ -86,6 +86,8 @@ async def resolve_model(session: AsyncSession, settings: Settings, model_ref: st
     model, provider, price = row
     if not model.enabled or not provider.enabled:
         raise ModelNotFound()
+    if provider.kind == "video" or provider.adapter == "video":
+        raise ModelNotFound()
     return _resolved(model, provider, price, settings)
 
 
@@ -102,6 +104,8 @@ async def first_fallback(
     )
     for model, provider, price in (await session.execute(stmt)).all():
         if not model.enabled or not provider.enabled:
+            continue
+        if provider.kind == "video" or provider.adapter == "video":
             continue
         try:
             return _resolved(model, provider, price, settings)

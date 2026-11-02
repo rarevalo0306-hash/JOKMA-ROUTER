@@ -30,8 +30,12 @@ async def test_provider_and_model_crud(client):
     assert slugs["deepseek"] is False
     assert slugs["together"] is False
     assert slugs["vllm"] is False
+    assert slugs["video"] is False
 
     provider = await create_provider(client, name="vps", adapter="openai", base_url="http://10.0.0.8:8001/v1")
+    assert provider["kind"] == "chat"
+    assert provider["key_url"] is None
+    assert provider["label"] is None
     model = await create_model(client, provider["id"], name="llama3.2-3b", alias="local-llama")
     disabled = await client.patch(
         f"/admin/models/{model['id']}",

@@ -12,6 +12,9 @@ export type Provider = {
   enabled: boolean;
   has_api_key: boolean;
   api_key_last4: string | null;
+  key_url: string | null;
+  label: string | null;
+  kind: "chat" | "video";
   created_at: string | null;
   updated_at: string | null;
 };

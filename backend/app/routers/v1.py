@@ -65,7 +65,12 @@ async def list_models(
         await session.execute(
             select(Model, Provider)
             .join(Provider, Provider.id == Model.provider_id)
-            .where(Model.enabled.is_(True), Provider.enabled.is_(True))
+            .where(
+                Model.enabled.is_(True),
+                Provider.enabled.is_(True),
+                Provider.kind != "video",
+                Provider.adapter != "video",
+            )
             .order_by(Provider.name, Model.name)
         )
     ).all()

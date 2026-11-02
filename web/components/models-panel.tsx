@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { readError } from "@/lib/format";
+import { chatRoutableProviders, providerTitle } from "@/lib/provider-groups";
 import type { CatalogModel, Provider } from "@/lib/types";
 
 const field =
@@ -16,6 +17,7 @@ export function ModelsPanel({
   providers: Provider[];
 }) {
   const router = useRouter();
+  const routable = chatRoutableProviders(providers);
   const [error, setError] = useState<string | null>(null);
   const [fallbacks, setFallbacks] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
@@ -58,7 +60,7 @@ export function ModelsPanel({
         </p>
       </header>
 
-      {providers.length === 0 ? (
+      {routable.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
           Crea un proveedor antes de añadir modelos.
         </p>
@@ -70,10 +72,10 @@ export function ModelsPanel({
         >
           <label className="text-sm">
             Proveedor
-            <select name="provider_id" className={field} defaultValue={providers[0]?.id}>
-              {providers.map((provider) => (
+            <select name="provider_id" className={field} defaultValue={routable[0]?.id}>
+              {routable.map((provider) => (
                 <option key={provider.id} value={provider.id}>
-                  {provider.name}
+                  {providerTitle(provider)}
                 </option>
               ))}
             </select>

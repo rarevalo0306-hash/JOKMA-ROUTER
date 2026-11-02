@@ -21,6 +21,10 @@ _STUBS = {
         "Reserved adapter. vLLM already speaks the OpenAI API: register it "
         "with the openai adapter and a base URL that ends in /v1."
     ),
+    "video": (
+        "Video provider. The gateway only routes chat completions, so this "
+        "adapter does not call the upstream API."
+    ),
 }
 
 
