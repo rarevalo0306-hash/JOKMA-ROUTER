@@ -5,7 +5,8 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PROVIDER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
-MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_MODEL_SEGMENT = r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}"
+MODEL_NAME = re.compile(rf"^(?:{_MODEL_SEGMENT})(?:/{_MODEL_SEGMENT})*$")
 ALIAS_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 
@@ -95,8 +96,8 @@ class ModelIn(BaseModel):
     @classmethod
     def name_ok(cls, value: str) -> str:
         value = value.strip()
-        if not MODEL_NAME.match(value):
-            raise ValueError("model name cannot contain a slash")
+        if len(value) > 200 or not MODEL_NAME.match(value):
+            raise ValueError("model name must be a slug or author/slug")
         return value
 
     @field_validator("alias")

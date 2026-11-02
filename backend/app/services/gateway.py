@@ -76,6 +76,10 @@ async def resolve_model(session: AsyncSession, settings: Settings, model_ref: st
         .outerjoin(ModelPrice, ModelPrice.model_id == Model.id)
     )
     if "/" in ref:
+        # Only the first slash selects the provider. The remainder is the
+        # upstream model id, so openrouter/openai/gpt-4o calls OpenRouter
+        # with model openai/gpt-4o. openai/gpt-4o still selects provider
+        # openai and model gpt-4o.
         provider_name, model_name = ref.split("/", 1)
         stmt = stmt.where(Provider.name == provider_name, Model.name == model_name)
     else:

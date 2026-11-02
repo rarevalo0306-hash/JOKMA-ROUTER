@@ -55,6 +55,7 @@ async def test_migration_applies_on_postgres():
             "20261101043500_init_gateway.sql",
             "20261102003400_current_chat_models.sql",
             "20261102031500_provider_key_presets.sql",
+            "20261102061200_openrouter_and_model_slashes.sql",
         ]
         again = await apply_migrations(url, SQL.parent)
         assert again == []
@@ -156,6 +157,7 @@ async def test_migration_applies_on_postgres():
             "together": ("openai", "https://api.together.xyz/v1", "https://api.together.ai/settings/api-keys"),
             "mistral": ("openai", "https://api.mistral.ai/v1", "https://console.mistral.ai/api-keys"),
             "dashscope": ("openai", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://modelstudio.console.alibabacloud.com/"),
+            "openrouter": ("openai", "https://openrouter.ai/api/v1", "https://openrouter.ai/keys"),
         }
         for name, (adapter, base_url, key_url) in chat.items():
             row = presets[name]
@@ -193,6 +195,35 @@ async def test_migration_applies_on_postgres():
         )
         assert kept["api_key_encrypted"] == "keep-me"
         assert kept["enabled"] is False
+        assert presets["openrouter"]["label"] == "OpenRouter"
+        await connection.execute(
+            """
+            insert into models (provider_id, name, enabled)
+            select id, 'openai/gpt-4o', true from providers where name = 'openrouter'
+            """
+        )
+        for bad_name in ("openai/", "/gpt-4o", "openai//gpt-4o", "a b"):
+            with pytest.raises(asyncpg.CheckViolationError):
+                async with connection.transaction():
+                    await connection.execute(
+                        """
+                        insert into models (provider_id, name, enabled)
+                        select id, $1, true from providers where name = 'openrouter'
+                        """,
+                        bad_name,
+                    )
+        await connection.execute(
+            "update providers set api_key_encrypted = 'keep-or', enabled = false where name = 'openrouter'"
+        )
+        for statement in split_sql((SQL.parent / "20261102061200_openrouter_and_model_slashes.sql").read_text()):
+            await connection.execute(statement)
+        kept_router = await connection.fetchrow(
+            "select api_key_encrypted, enabled, base_url from providers where name = 'openrouter'"
+        )
+        assert kept_router["api_key_encrypted"] == "keep-or"
+        assert kept_router["enabled"] is False
+        assert kept_router["base_url"] == "https://openrouter.ai/api/v1"
+        assert await connection.fetchval("select count(*) from providers where name = 'openrouter'") == 1
         comment = await connection.fetchval(
             """
             select col_description('providers'::regclass, attnum)

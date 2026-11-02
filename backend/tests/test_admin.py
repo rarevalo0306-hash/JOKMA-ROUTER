@@ -48,6 +48,34 @@ async def test_provider_and_model_crud(client):
     assert disabled.json()["public_id"] == "vps/llama3.2-3b"
     assert disabled.json()["input_per_million"] == 1.5
 
+    slashed = await client.post(
+        "/admin/models",
+        json={
+            "provider_id": provider["id"],
+            "name": "openai/gpt-4o",
+            "alias": None,
+            "enabled": True,
+            "fallback_model_ids": [],
+            "input_per_million": 0,
+            "output_per_million": 0,
+        },
+        headers=ADMIN,
+    )
+    assert slashed.status_code == 201, slashed.text
+    assert slashed.json()["public_id"] == "vps/openai/gpt-4o"
+    rejected = await client.post(
+        "/admin/models",
+        json={
+            "provider_id": provider["id"],
+            "name": "openai/",
+            "alias": None,
+            "enabled": True,
+            "fallback_model_ids": [],
+        },
+        headers=ADMIN,
+    )
+    assert rejected.status_code == 422
+
     removed = await client.delete(f"/admin/providers/{provider['id']}", headers=ADMIN)
     assert removed.status_code == 204
     listing = await client.get("/admin/models", headers=ADMIN)

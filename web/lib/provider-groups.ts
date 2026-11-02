@@ -9,6 +9,7 @@ export const CHAT_PRESET_NAMES = [
   "together",
   "mistral",
   "dashscope",
+  "openrouter",
 ] as const;
 
 export const VIDEO_PRESET_NAMES = [

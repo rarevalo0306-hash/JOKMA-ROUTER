@@ -487,6 +487,50 @@ async def test_respx_openai_non_stream_shape(app, client):
     assert response.json()["choices"][0]["message"]["content"] == "via-respx"
 
 
+async def test_openrouter_sends_the_full_model_id(app, client):
+    openai = await create_provider(client)
+    await create_model(client, openai["id"], name="gpt-4o", alias=None)
+    router = await create_provider(
+        client,
+        name="openrouter",
+        adapter="openai",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="or-test",
+    )
+    created = await create_model(client, router["id"], name="openai/gpt-4o", alias=None)
+    assert created["public_id"] == "openrouter/openai/gpt-4o"
+    key = await create_key(client)
+    seen = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["model"] = json.loads(request.content)["model"]
+        return httpx.Response(200, content=openai_sse("via-router", {"prompt_tokens": 1, "completion_tokens": 1}))
+
+    await install_mock(app, handler)
+    routed = await client.post(
+        "/v1/chat/completions",
+        json=chat("openrouter/openai/gpt-4o", stream=False),
+        headers={"Authorization": f"Bearer {key['raw_key']}"},
+    )
+    assert routed.status_code == 200, routed.text
+    assert seen["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert seen["model"] == "openai/gpt-4o"
+
+    direct = await client.post(
+        "/v1/chat/completions",
+        json=chat("openai/gpt-4o", stream=False),
+        headers={"Authorization": f"Bearer {key['raw_key']}"},
+    )
+    assert direct.status_code == 200, direct.text
+    assert seen["url"] == "https://api.openai.com/v1/chat/completions"
+    assert seen["model"] == "gpt-4o"
+    listed = await client.get("/v1/models", headers={"Authorization": f"Bearer {key['raw_key']}"})
+    ids = {item["id"] for item in listed.json()["data"]}
+    assert "openrouter/openai/gpt-4o" in ids
+    assert "openai/gpt-4o" in ids
+
+
 async def test_provider_secret_is_encrypted_at_rest(app, client):
     created = await create_provider(client, api_key="sk-super-secret")
     assert created["api_key_last4"] == "cret"

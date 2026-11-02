@@ -12,6 +12,18 @@ from app.routers.admin import router as admin_router
 from app.routers.v1 import APIError, router as v1_router
 
 
+def _public_errors(exc: RequestValidationError) -> list[dict]:
+    """Drop raw exception objects so a 422 body can be serialized."""
+    public: list[dict] = []
+    for item in exc.errors():
+        row = {key: value for key, value in item.items() if key != "ctx"}
+        ctx = item.get("ctx")
+        if isinstance(ctx, dict):
+            row["ctx"] = {key: str(value) for key, value in ctx.items()}
+        public.append(row)
+    return public
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -66,7 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     }
                 },
             )
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(status_code=422, content={"detail": _public_errors(exc)})
 
     return app
 
