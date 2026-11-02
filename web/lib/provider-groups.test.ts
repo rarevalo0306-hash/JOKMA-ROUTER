@@ -25,10 +25,11 @@ test("preset cards keep chat and video in catalog order", () => {
     provider({ name: "local", adapter: "ollama", label: null, key_url: null }),
     provider({ name: "hailuo", adapter: "video", kind: "video", label: "MiniMax Hailuo" }),
     provider({ name: "openai", label: "OpenAI" }),
+    provider({ name: "openrouter", label: "OpenRouter" }),
     provider({ name: "dashscope", label: "DashScope Qwen" }),
     provider({ name: "veo", adapter: "video", kind: "video", label: "Google Veo" }),
   ]);
-  assert.deepEqual(grouped.chat.map((item) => item.name), ["openai", "dashscope"]);
+  assert.deepEqual(grouped.chat.map((item) => item.name), ["openai", "dashscope", "openrouter"]);
   assert.deepEqual(grouped.video.map((item) => item.name), ["veo", "hailuo"]);
   assert.deepEqual(grouped.rest.map((item) => item.name), ["local"]);
   assert.equal(providerTitle(grouped.video[0]), "Google Veo");

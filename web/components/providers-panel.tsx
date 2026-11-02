@@ -129,6 +129,12 @@ function PresetCard({ provider, video }: { provider: Provider; video: boolean })
           sale por aquí.
         </p>
       ) : null}
+      {provider.name === "openrouter" ? (
+        <p className="mt-2 text-sm text-muted">
+          El modelo se escribe con el autor, por ejemplo openai/gpt-4o. Esa ruta completa es la que
+          recibe OpenRouter.
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-muted">
         {provider.has_api_key ? `Clave guardada ····${provider.api_key_last4}` : "Sin clave"}
       </p>

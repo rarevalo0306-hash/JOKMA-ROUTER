@@ -59,7 +59,7 @@ class Model(Base):
     provider_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("providers.id", ondelete="CASCADE")
     )
-    name: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(200))
     alias: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

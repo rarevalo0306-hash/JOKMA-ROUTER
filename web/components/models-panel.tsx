@@ -54,9 +54,10 @@ export function ModelsPanel({
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Catálogo de modelos</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          El id público es proveedor/modelo. El alias no lleva barra. Si el principal agota el tiempo,
-          responde 429 o un 5xx, se intenta una sola vez el primer respaldo habilitado, antes de enviar
-          tokens al cliente.
+          El id público empieza por el proveedor. El nombre del modelo puede llevar barra, como
+          openai/gpt-4o en OpenRouter: esa ruta completa se envía al proveedor. El alias no lleva
+          barra. Si el principal agota el tiempo, responde 429 o un 5xx, se intenta una sola vez el
+          primer respaldo habilitado, antes de enviar tokens al cliente.
         </p>
       </header>
 
@@ -82,7 +83,7 @@ export function ModelsPanel({
           </label>
           <label className="text-sm">
             Nombre del modelo
-            <input name="name" required placeholder="gpt-4o" className={field} />
+            <input name="name" required placeholder="gpt-4o o openai/gpt-4o" className={field} />
           </label>
           <label className="text-sm">
             Alias
