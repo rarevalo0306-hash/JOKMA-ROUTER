@@ -54,6 +54,7 @@ async def test_migration_applies_on_postgres():
         assert applied == [
             "20261101043500_init_gateway.sql",
             "20261102003400_current_chat_models.sql",
+            "20261102031500_provider_key_presets.sql",
         ]
         again = await apply_migrations(url, SQL.parent)
         assert again == []
@@ -133,6 +134,65 @@ async def test_migration_applies_on_postgres():
             assert money(got_out) == money(out)
         assert "anthropic/claude-opus-4-1" not in catalog
         assert await connection.fetchval("select enabled from providers where name = 'openai'") is False
+        presets = {
+            row["name"]: row
+            for row in await connection.fetch(
+                """
+                select name, adapter, base_url, key_url, label, kind, enabled,
+                       api_key_encrypted is null as key_empty
+                from providers
+                """
+            )
+        }
+        assert presets["openai"]["key_url"] == "https://platform.openai.com/api-keys"
+        assert presets["openai"]["label"] == "OpenAI"
+        assert presets["anthropic"]["key_url"] == "https://console.anthropic.com/settings/keys"
+        assert presets["anthropic"]["adapter"] == "anthropic"
+        assert presets["local"]["key_url"] is None
+        chat = {
+            "gemini": ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "https://aistudio.google.com/apikey"),
+            "groq": ("openai", "https://api.groq.com/openai/v1", "https://console.groq.com/keys"),
+            "deepseek": ("openai", "https://api.deepseek.com/v1", "https://platform.deepseek.com/api_keys"),
+            "together": ("openai", "https://api.together.xyz/v1", "https://api.together.ai/settings/api-keys"),
+            "mistral": ("openai", "https://api.mistral.ai/v1", "https://console.mistral.ai/api-keys"),
+            "dashscope": ("openai", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://modelstudio.console.alibabacloud.com/"),
+        }
+        for name, (adapter, base_url, key_url) in chat.items():
+            row = presets[name]
+            assert row["adapter"] == adapter
+            assert row["base_url"] == base_url
+            assert row["key_url"] == key_url
+            assert row["kind"] == "chat"
+            assert row["enabled"] is True
+            assert row["key_empty"] is True
+        video = {
+            "veo": "https://aistudio.google.com/apikey",
+            "sora": "https://platform.openai.com/api-keys",
+            "runway": "https://dev.runwayml.com/",
+            "kling": "https://klingai.com/dev",
+            "luma": "https://lumalabs.ai/dream-machine/api",
+            "pika": "https://pika.art/",
+            "fal": "https://fal.ai/dashboard/keys",
+            "hailuo": "https://www.minimax.io/",
+        }
+        for name, key_url in video.items():
+            row = presets[name]
+            assert row["adapter"] == "video"
+            assert row["kind"] == "video"
+            assert row["enabled"] is False
+            assert row["key_url"] == key_url
+            assert row["key_empty"] is True
+        assert await connection.fetchval("select count(*) from providers where name = 'openai'") == 1
+        await connection.execute(
+            "update providers set api_key_encrypted = 'keep-me', enabled = false where name = 'groq'"
+        )
+        for statement in split_sql((SQL.parent / "20261102031500_provider_key_presets.sql").read_text()):
+            await connection.execute(statement)
+        kept = await connection.fetchrow(
+            "select api_key_encrypted, enabled from providers where name = 'groq'"
+        )
+        assert kept["api_key_encrypted"] == "keep-me"
+        assert kept["enabled"] is False
         comment = await connection.fetchval(
             """
             select col_description('providers'::regclass, attnum)

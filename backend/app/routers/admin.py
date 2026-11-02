@@ -52,6 +52,9 @@ def _provider_out(row: Provider) -> dict:
         "enabled": row.enabled,
         "has_api_key": bool(row.api_key_encrypted),
         "api_key_last4": row.api_key_last4,
+        "key_url": row.key_url,
+        "label": row.label,
+        "kind": row.kind or "chat",
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
     }
