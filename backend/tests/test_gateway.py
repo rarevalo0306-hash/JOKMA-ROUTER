@@ -102,6 +102,29 @@ async def test_missing_and_invalid_keys_are_rejected(client):
     assert foreign.json()["error"]["code"] == "invalid_api_key"
 
 
+async def test_api_key_needs_only_a_name_and_the_list_stays_masked(client):
+    created = []
+    for name in ("Producción", "Facturas", "Otro"):
+        response = await client.post("/admin/api-keys", json={"name": name}, headers=ADMIN)
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["name"] == name
+        assert body["app_name"] == name
+        assert body["raw_key"].startswith("ak_")
+        assert len(body["raw_key"]) > len(body["key_prefix"])
+        created.append(body)
+    listed = await client.get("/admin/api-keys", headers=ADMIN)
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert len(rows) >= 3
+    for row in rows:
+        assert "raw_key" not in row
+    text = listed.text
+    for body in created:
+        assert body["raw_key"] not in text
+        assert body["key_prefix"] in text
+
+
 async def test_revoked_key_is_rejected(client):
     created = await create_key(client)
     revoked = await client.post(f"/admin/api-keys/{created['id']}/revoke", headers=ADMIN)
