@@ -148,5 +148,23 @@ class ModelUpdate(BaseModel):
 
 
 class ApiKeyIn(BaseModel):
+    """One label. app_name stays for usage rows and defaults to the name."""
+
     name: str = Field(min_length=1, max_length=120)
-    app_name: str = Field(min_length=1, max_length=120)
+    app_name: str | None = Field(default=None, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def name_ok(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name is required")
+        return value
+
+    @field_validator("app_name")
+    @classmethod
+    def app_ok(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None

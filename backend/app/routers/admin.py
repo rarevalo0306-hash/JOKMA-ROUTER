@@ -328,8 +328,15 @@ async def list_api_keys(_admin: Admin, session: Db):
 
 @router.post("/api-keys", status_code=201)
 async def create_api_key(payload: ApiKeyIn, _admin: Admin, session: Db):
+    # No maximum. Each call mints a new ak_ token. The raw value is returned
+    # once here and is not stored.
     raw, key_hash, prefix = generate_api_key()
-    row = ApiKey(name=payload.name.strip(), app_name=payload.app_name.strip(), key_prefix=prefix, key_hash=key_hash)
+    row = ApiKey(
+        name=payload.name,
+        app_name=payload.app_name or payload.name,
+        key_prefix=prefix,
+        key_hash=key_hash,
+    )
     session.add(row)
     await session.flush()
     return _key_out(row, raw)
