@@ -65,7 +65,7 @@ export function KeysPanel({ keys }: { keys: ApiKeyRecord[] }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+          className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
         >
           {pending ? "Creando…" : "Crear clave"}
         </button>

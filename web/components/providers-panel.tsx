@@ -162,7 +162,7 @@ function PresetCard({ provider, video }: { provider: Provider; video: boolean })
         <button
           type="submit"
           disabled={busy}
-          className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+          className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
         >
           {busy ? "Guardando…" : "Guardar clave"}
         </button>
@@ -252,7 +252,7 @@ function OtherProviderForm({ adapters }: { adapters: AdapterInfo[] }) {
           <button
             type="submit"
             disabled={pending}
-            className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+            className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
           >
             {pending ? "Guardando…" : "Guardar proveedor"}
           </button>
@@ -393,7 +393,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
           <button
             type="submit"
             disabled={busy}
-            className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink"
+            className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent"
           >
             Guardar cambios
           </button>
