@@ -77,7 +77,7 @@ export function KeysPanel({ keys }: { keys: ApiKeyRecord[] }) {
       ) : null}
 
       {revealed ? (
-        <div role="status" className="mb-6 rounded-2xl border border-citron/50 bg-panel p-4">
+        <div role="status" className="mb-6 rounded-2xl border border-accent/50 bg-panel p-4">
           <p className="text-sm font-medium">Copia esta clave ahora. No se volverá a mostrar.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
             <code className="mono block min-w-0 flex-1 break-all rounded-xl border border-line bg-ink px-3 py-2 text-sm text-paper">

@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  /* Tokens from builder.jokma.app: --bg, --panel, --border, --text, --muted, --accent. */
-  --color-ink: #09090b;
-  --color-panel: #18181b;
-  --color-panel-2: #242428;
-  --color-line: #27272a;
-  --color-paper: #f4f4f5;
-  --color-muted: #a1a1aa;
-  --color-citron: #38bdf8;
-  --color-on-accent: #242428;
-  --color-danger: #fb9696;
-  --color-ok: #38bdf8;
+  /* Dark theme from ai.jokma.app. Light teal is the filled brand color; accent is the bright mint. */
+  --color-ink: #101715;
+  --color-panel: #18221f;
+  --color-panel-2: #243b33;
+  --color-line: #30413b;
+  --color-paper: #f0f5f3;
+  --color-muted: #adbeb8;
+  --color-citron: #087d70;
+  --color-accent: #23d8bd;
+  --color-on-accent: #f0f5f3;
+  --color-danger: #ff9aac;
+  --color-ok: #73d9b4;
   --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
 }
@@ -29,7 +30,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-citron);
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
 

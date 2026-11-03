@@ -143,7 +143,7 @@ function PresetCard({ provider, video }: { provider: Provider; video: boolean })
           href={provider.key_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 text-sm font-medium text-citron"
+          className="mt-3 text-sm font-medium text-accent"
         >
           Obtener clave
         </a>
