@@ -21,9 +21,9 @@ export default async function LoginPage({
   const message = error ? ERRORS[error] : undefined;
 
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-10">
+    <main className="auth-shell grid min-h-screen place-items-center px-4 py-10">
       <section className="w-full max-w-md rounded-3xl border border-line bg-panel p-8">
-        <span className="grid h-12 w-12 place-items-center rounded-xl bg-citron font-semibold text-ink">
+        <span className="grid h-12 w-12 place-items-center rounded-xl bg-citron font-semibold text-on-accent">
           JR
         </span>
         <h1 className="mt-6 text-2xl font-semibold">Iniciar sesión</h1>
@@ -38,7 +38,7 @@ export default async function LoginPage({
         {ready ? (
           <a
             href="/api/auth/google"
-            className="mt-6 inline-flex rounded-full bg-citron px-5 py-2.5 text-sm font-semibold text-ink"
+            className="mt-6 inline-flex rounded-full bg-citron px-5 py-2.5 text-sm font-semibold text-on-accent"
           >
             Continuar con Google
           </a>

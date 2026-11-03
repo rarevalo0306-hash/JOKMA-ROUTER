@@ -17,7 +17,7 @@ export default function Error({
       <button
         type="button"
         onClick={reset}
-        className="mt-4 rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink"
+        className="mt-4 rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent"
       >
         Reintentar
       </button>

@@ -1,31 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #12140f;
-  --color-panel: #1c2017;
-  --color-panel-2: #262b20;
-  --color-line: #34392d;
-  --color-paper: #f3f0e6;
-  --color-muted: #aaa69a;
-  --color-citron: #d6f26a;
-  --color-danger: #ff9b86;
-  --color-ok: #b7f0c4;
+  /* Tokens from builder.jokma.app: --bg, --panel, --border, --text, --muted, --accent. */
+  --color-ink: #09090b;
+  --color-panel: #18181b;
+  --color-panel-2: #242428;
+  --color-line: #27272a;
+  --color-paper: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-citron: #38bdf8;
+  --color-on-accent: #242428;
+  --color-danger: #fb9696;
+  --color-ok: #38bdf8;
   --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
 body {
-  background:
-    radial-gradient(880px 380px at 0% -10%, rgba(214, 242, 106, 0.09), transparent 55%),
-    var(--color-ink);
+  background: var(--color-ink);
   color: var(--color-paper);
+  color-scheme: dark;
   font-family: var(--font-sans);
   min-height: 100vh;
 }
 
+.auth-shell {
+  background: radial-gradient(ellipse at top, var(--color-panel), var(--color-ink) 65%);
+}
+
 :focus-visible {
   outline: 2px solid var(--color-citron);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 code,

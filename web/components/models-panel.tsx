@@ -108,7 +108,7 @@ export function ModelsPanel({
             <button
               type="submit"
               disabled={pending}
-              className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+              className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
             >
               {pending ? "Guardando…" : "Añadir modelo"}
             </button>
@@ -187,7 +187,7 @@ function ModelRow({ model, options }: { model: CatalogModel; options: CatalogMod
           role="switch"
           aria-checked={enabled}
           onClick={() => setEnabled((value) => !value)}
-          className={`rounded-full px-3 py-1 text-sm ${enabled ? "bg-citron text-ink" : "border border-line text-muted"}`}
+          className={`rounded-full px-3 py-1 text-sm ${enabled ? "bg-citron text-on-accent" : "border border-line text-muted"}`}
         >
           {enabled ? "Activo" : "Inactivo"}
         </button>
@@ -233,7 +233,7 @@ function ModelRow({ model, options }: { model: CatalogModel; options: CatalogMod
           type="button"
           onClick={save}
           disabled={busy}
-          className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+          className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
         >
           Guardar
         </button>
