@@ -51,7 +51,7 @@ export default async function AnalyticsPage() {
                     </div>
                     <div className="h-2 rounded-full bg-panel-2" aria-hidden>
                       <div
-                        className="h-2 rounded-full bg-citron"
+                        className="h-2 rounded-full bg-accent"
                         style={{ width: `${Math.max(4, (total / max) * 100)}%` }}
                       />
                     </div>

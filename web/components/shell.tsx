@@ -24,7 +24,7 @@ export function Shell({
     <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 gap-6 px-4 py-6 md:grid-cols-[220px_1fr] md:px-6">
       <aside className="md:sticky md:top-6 md:self-start">
         <div className="mb-6 flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-citron font-semibold text-on-accent">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent font-semibold text-ink">
             JR
           </span>
           <div>

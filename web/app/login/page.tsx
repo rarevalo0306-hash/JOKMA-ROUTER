@@ -23,7 +23,7 @@ export default async function LoginPage({
   return (
     <main className="auth-shell grid min-h-screen place-items-center px-4 py-10">
       <section className="w-full max-w-md rounded-3xl border border-line bg-panel p-8">
-        <span className="grid h-12 w-12 place-items-center rounded-xl bg-citron font-semibold text-on-accent">
+        <span className="grid h-12 w-12 place-items-center rounded-xl bg-accent font-semibold text-ink">
           JR
         </span>
         <h1 className="mt-6 text-2xl font-semibold">Iniciar sesión</h1>
