@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -221,6 +221,31 @@ async def test_provider(provider_id: uuid.UUID, request: Request, _admin: Admin,
         return {"ok": False, "detail": scrub(str(exc), api_key)[:300]}
 
 
+@router.get("/providers/{provider_id}/models")
+async def discover_provider_models(provider_id: uuid.UUID, request: Request, _admin: Admin, session: Db):
+    row = await session.get(Provider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    if row.kind == "video" or row.adapter == "video":
+        raise HTTPException(status_code=400, detail="El proveedor es de video")
+
+    settings = request.app.state.settings
+    try:
+        api_key = decrypt_secret(settings, row.api_key_encrypted)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail="No se pudo leer la clave del proveedor") from exc
+    try:
+        models = await get_adapter(row.adapter).discover_models(
+            request.app.state.http,
+            base_url=row.base_url,
+            api_key=api_key,
+            timeout=settings.request_timeout_seconds,
+        )
+    except AdapterError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=scrub(exc.message, api_key)) from exc
+    return {"models": models}
+
+
 @router.get("/models")
 async def list_models(_admin: Admin, session: Db):
     rows = (
@@ -261,6 +286,42 @@ async def create_model(payload: ModelIn, _admin: Admin, session: Db):
     return await _model_out(session, model, provider, price)
 
 
+async def _set_model_alias(session: Db, target_id: uuid.UUID, payload: ModelUpdate) -> None:
+    source_id = payload.transfer_alias_from
+    fields = payload.model_fields_set
+    if "alias" not in fields:
+        if source_id or "expected_alias" in fields:
+            raise HTTPException(400, "Indica el alias que quieres asignar.")
+        return
+
+    if source_id:
+        if source_id == target_id or not payload.alias or "expected_alias" not in fields:
+            raise HTTPException(400, "Indica el modelo de origen, el alias y el alias actual del destino.")
+        # Lock overlapping transfers in the same order on PostgreSQL. Both conditional
+        # updates run in the request transaction, including the rest of this model edit.
+        await session.execute(
+            select(Model.id).where(Model.id.in_([source_id, target_id])).order_by(Model.id).with_for_update()
+        )
+        released = await session.execute(
+            update(Model)
+            .where(Model.id == source_id, Model.alias == payload.alias)
+            .values(alias=None, updated_at=datetime.now(timezone.utc))
+            .returning(Model.id)
+        )
+        if released.scalar_one_or_none() is None:
+            raise HTTPException(409, "El alias ya cambió de origen. Actualiza el catálogo.")
+
+    assign = update(Model).where(Model.id == target_id)
+    if "expected_alias" in fields:
+        assign = assign.where(Model.alias == payload.expected_alias)
+    try:
+        result = await session.execute(assign.values(alias=payload.alias).returning(Model.id))
+    except IntegrityError as exc:
+        raise HTTPException(409, "Alias already exists") from exc
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(409, "El alias del modelo de destino cambió. Actualiza el catálogo.")
+
+
 @router.patch("/models/{model_id}")
 async def update_model(model_id: uuid.UUID, payload: ModelUpdate, _admin: Admin, session: Db):
     model = await session.get(Model, model_id)
@@ -268,8 +329,7 @@ async def update_model(model_id: uuid.UUID, payload: ModelUpdate, _admin: Admin,
         raise HTTPException(status_code=404, detail="Model not found")
     provider = await session.get(Provider, model.provider_id)
     data = payload.model_dump(exclude_unset=True)
-    if "alias" in data:
-        model.alias = data["alias"]
+    await _set_model_alias(session, model_id, payload)
     if "enabled" in data and data["enabled"] is not None:
         model.enabled = data["enabled"]
     price = await session.get(ModelPrice, model.id)

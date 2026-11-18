@@ -2,15 +2,14 @@ from app.adapters.anthropic import AnthropicAdapter
 from app.adapters.base import AdapterError, ProviderAdapter
 from app.adapters.ollama import OllamaAdapter
 from app.adapters.openai_compat import OpenAIAdapter
-from app.adapters.stubs import stub_adapters
+from app.adapters.stubs import VideoAdapter
 
 ADAPTERS: dict[str, ProviderAdapter] = {
-    "openai": OpenAIAdapter(),
+    **{slug: OpenAIAdapter(slug) for slug in ("openai", "groq", "gemini", "deepseek", "together", "vllm")},
     "anthropic": AnthropicAdapter(),
     "ollama": OllamaAdapter(),
+    "video": VideoAdapter(),
 }
-for _stub in stub_adapters():
-    ADAPTERS[_stub.slug] = _stub
 
 
 def get_adapter(slug: str) -> ProviderAdapter:

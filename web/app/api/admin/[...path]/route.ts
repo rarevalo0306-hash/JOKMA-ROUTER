@@ -30,8 +30,7 @@ async function proxy(request: Request, context: Context) {
   }
   try {
     const response = await fetch(target, init);
-    const text = await response.text();
-    return new Response(text, {
+    return new Response(response.body, {
       status: response.status,
       headers: {
         "content-type": response.headers.get("content-type") || "application/json",

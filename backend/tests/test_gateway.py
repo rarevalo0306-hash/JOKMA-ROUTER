@@ -434,7 +434,7 @@ async def test_client_error_does_not_fallback(app, client):
     assert summary["recent"][0]["model_served"] is None
 
 
-async def test_stub_adapter_is_not_called_upstream(app, client):
+async def test_groq_adapter_uses_its_configured_openai_compatible_endpoint(app, client):
     provider = await create_provider(
         client,
         name="groq",
@@ -448,7 +448,7 @@ async def test_stub_adapter_is_not_called_upstream(app, client):
 
     async def handler(request: httpx.Request) -> httpx.Response:
         calls.append(str(request.url))
-        return httpx.Response(200, content=openai_sse("no"))
+        return httpx.Response(200, content=openai_sse("via-groq"))
 
     await install_mock(app, handler)
     response = await client.post(
@@ -456,9 +456,9 @@ async def test_stub_adapter_is_not_called_upstream(app, client):
         json=chat("groq/llama-3.3-70b", stream=False),
         headers={"Authorization": f"Bearer {key['raw_key']}"},
     )
-    assert response.status_code == 501
-    assert calls == []
-    assert "not implemented" in response.json()["error"]["message"]
+    assert response.status_code == 200
+    assert calls == ["https://api.groq.com/openai/v1/chat/completions"]
+    assert response.json()["choices"][0]["message"]["content"] == "via-groq"
 
 
 async def test_video_provider_is_not_a_chat_route(app, client):

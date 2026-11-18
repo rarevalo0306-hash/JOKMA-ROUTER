@@ -1,0 +1,132 @@
+.router-login {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  color: var(--color-paper);
+  background: var(--color-ink);
+}
+
+.router-login-private {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: .78rem;
+}
+
+.router-login-layout {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  margin: auto;
+  width: min(calc(100% - clamp(48px, 8.2vw, 136px)), 1400px);
+  min-height: clamp(460px, 43vw, 660px);
+  border: 1px solid var(--color-line);
+  border-radius: 19px;
+  background: var(--color-panel);
+}
+
+.router-login-art {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--color-panel) 0%, color-mix(in srgb, var(--color-panel) 96%, transparent) 20%, color-mix(in srgb, var(--color-panel) 50%, transparent) 41%, transparent 62%),
+    url("/images/gateway-prism.webp") 62% center / cover no-repeat;
+}
+
+.router-login-content {
+  width: min(46%, 560px);
+  padding: clamp(34px, 5vw, 80px);
+  padding-right: 0;
+}
+
+.router-login-content h1 {
+  margin: 0;
+  color: var(--color-paper);
+  font: 510 clamp(4rem, 6.35vw, 6.8rem)/.98 var(--font-sans);
+  letter-spacing: -.08em;
+}
+
+.router-login-content h1 em {
+  color: color-mix(in srgb, var(--color-accent) 55%, var(--color-paper));
+  font: italic 1.09em/.91 "Instrument Serif", Georgia, serif;
+  letter-spacing: -.052em;
+}
+
+.router-login-description {
+  max-width: 39ch;
+  margin-top: 1.3rem;
+  color: var(--color-muted);
+  font-size: clamp(.95rem, 1.12vw, 1.05rem);
+  line-height: 1.6;
+}
+
+.router-login-action { margin-top: 1.9rem; }
+
+.router-login-google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 228px;
+  min-height: 48px;
+  padding: .7rem 1.1rem;
+  border: 1px solid var(--color-muted);
+  border-radius: 8px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-weight: 590;
+  font-size: .88rem;
+  transition: background .15s;
+}
+
+.router-login-google:not(:disabled):hover { background: white; }
+.router-login-google:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+.router-login-google:disabled { background: var(--color-muted); }
+.router-login-google svg:last-child:not(:first-child) { margin-left: 6px; }
+
+.router-login-error,
+.router-login-config {
+  max-width: 320px;
+  font-size: .825rem;
+  line-height: 1.5;
+}
+
+.router-login-error { margin: 0 0 1rem; color: var(--color-danger); }
+.router-login-config { margin: .8rem 0 0; color: var(--color-muted); }
+
+@media (max-height: 700px) and (min-width: 761px) {
+  .router-login-layout { margin-block: 28px; }
+}
+
+@media (max-width: 760px) {
+  .router-login-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    width: min(calc(100% - 32px), 490px);
+    margin-block: clamp(22px, 6vh, 58px);
+    border-radius: 15px;
+  }
+  .router-login-art {
+    position: relative;
+    z-index: auto;
+    order: -1;
+    height: clamp(170px, 48vw, 240px);
+    background: linear-gradient(0deg, var(--color-panel), transparent 30%),
+      url("/images/gateway-prism.webp") 79% center / cover no-repeat;
+  }
+  .router-login-content {
+    width: 100%;
+    padding: 20px clamp(20px, 6vw, 34px) 32px;
+  }
+  .router-login-content h1 { font-size: clamp(3.4rem, 13vw, 4.7rem); }
+  .router-login-description { margin-top: 1rem; }
+  .router-login-action { margin-top: 1.5rem; }
+  .router-login-google { width: 100%; min-width: 0; }
+}

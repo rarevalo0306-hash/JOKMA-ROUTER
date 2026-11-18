@@ -1,7 +1,14 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 @theme {
-  /* Dark theme from ai.jokma.app. Light teal is the filled brand color; accent is the bright mint. */
   --color-ink: #101715;
   --color-panel: #18221f;
   --color-panel-2: #243b33;
@@ -13,28 +20,114 @@
   --color-on-accent: #f0f5f3;
   --color-danger: #ff9aac;
   --color-ok: #73d9b4;
-  --font-sans: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-sans: "Geist", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
-body {
-  background: var(--color-ink);
-  color: var(--color-paper);
+:root {
+  --brand-highlight: color-mix(in srgb, var(--color-accent) 45%, var(--color-paper));
+}
+
+html {
   color-scheme: dark;
+  background: var(--color-ink);
+  scrollbar-color: var(--color-line) var(--color-ink);
+}
+
+body {
+  color: var(--color-paper);
   font-family: var(--font-sans);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-.auth-shell {
-  background: radial-gradient(ellipse at top, var(--color-panel), var(--color-ink) 65%);
+::selection { background: var(--color-citron); color: white; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+code, .mono { font-family: var(--font-mono); }
+button:not(:disabled), summary, select { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+.orbit-mark {
+  display: inline-block;
+  position: relative;
+  width: 38px;
+  height: 38px;
+  color: var(--brand-highlight);
+  flex: none;
+}
+.orbit-mark i {
+  position: absolute;
+  width: 74%;
+  height: 37%;
+  top: 20%;
+  left: 12%;
+  border: 2.3px solid currentColor;
+  border-radius: 48%;
+  transform: rotate(-30deg);
+}
+.orbit-mark i:nth-child(2) { top: 32%; color: var(--color-accent); }
+.orbit-mark i:nth-child(3) { top: 44%; color: var(--color-citron); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif-italic.woff2") format("woff2");
+  font-style: italic;
+  font-display: swap;
 }
-
-code,
-.mono {
-  font-family: var(--font-mono);
+.console-frame { min-height: 100dvh; background: var(--color-ink); }
+.console-topbar { background: var(--color-panel); border-bottom: 1px solid var(--color-line); }
+.console-bar-inner, .console-content { width: min(100%, 1536px); margin-inline: auto; padding-inline: clamp(24px,4.1vw,68px); }
+.console-bar-inner { display: flex; align-items: center; height: 68px; gap: clamp(22px,3.8vw,72px); }
+.console-brand { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--color-paper); font-size: 21px; line-height: 1; font-weight: 720; letter-spacing: -.075em; }
+.console-brand .orbit-mark { height: 34px; width: 34px; }
+.brand-suffix { font-weight: 420; margin-left: 5px; color: var(--color-muted); letter-spacing: -.065em; }
+.console-nav, .console-tools { display: flex; align-items: center; }
+.console-nav { align-self: stretch; gap: clamp(1px,.85vw,16px); }
+.console-nav-link { position: relative; display: flex; gap: 8px; align-items: center; justify-content: center; padding-inline: clamp(6px,.6vw,14px); min-height: 100%; color: var(--color-muted); font-size: 13px; font-weight: 490; transition: color .15s ease; }
+.console-nav-link:hover { color: white; }
+.console-nav-link svg, .console-popover svg { width: 16px; height: 16px; flex: none; }
+.console-nav-link[aria-current="page"] { color: var(--brand-highlight); }
+.console-nav-link[aria-current="page"]::after { content: ""; height: 2px; position: absolute; left: 6px; right: 6px; bottom: -1px; background: var(--color-accent); }
+.console-tools { margin-left: auto; gap: 13px; }
+.console-health { color: var(--color-muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; }
+.console-health i { width: 6px; height: 6px; border-radius: 100%; background: var(--color-ok); box-shadow: 0 0 9px color-mix(in srgb, var(--color-ok) 30%, transparent); }
+.console-health.is-down { color: var(--color-danger); }
+.console-health.is-down i { background: currentColor; }
+.console-account { position: relative; }
+.console-account summary { display: grid; place-items: center; width: 32px; height: 32px; background: linear-gradient(135deg,var(--color-panel-2),var(--color-panel)); border: 1px solid var(--color-citron); border-radius: 50%; color: var(--brand-highlight); font-size: 12px; font-weight: 620; cursor: pointer; }
+.console-account summary::-webkit-details-marker { display: none; }
+.console-popover { position: absolute; z-index: 25; right: 0; top: 43px; width: max-content; max-width: min(275px,90vw); min-width: 190px; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px; padding: 10px; box-shadow: 0 15px 32px #0006; }
+.console-popover strong,.console-popover > span { display: block; padding: 1px 8px; font-size: 13px; }
+.console-popover > span { font-size: 12px; color: var(--color-muted); overflow-wrap: anywhere; margin-bottom: 8px; }
+.console-popover a,.console-popover button { display: flex; width: 100%; gap: 9px; align-items: center; font-size: 12px; padding: 9px; border-radius: 6px; color: var(--color-paper); }
+.console-popover a:hover,.console-popover button:hover { background: var(--color-panel-2); }
+.console-content { padding-block: clamp(24px,2.3vw,36px) 60px; }
+.console-skip { position: fixed; z-index: 99; left: .6rem; top: -6rem; background: var(--color-accent); color: var(--color-ink); padding: .55rem 1rem; border-radius: .45rem; }
+.console-skip:focus { top:.65rem; }
+@media(min-width: 861px) and (max-width: 1160px) {
+ .console-bar-inner { gap: 16px; padding-inline: 24px; }
+ .console-tools { gap: 8px; }
+ .console-nav { gap: 1px; }
+ .console-nav-link { font-size: 12px; gap: 5px; }
+}
+@media(max-width: 860px) {
+ .console-bar-inner { height: 56px; padding-inline: 17px; }
+ .console-content { padding: 19px 15px calc(85px + env(safe-area-inset-bottom)); }
+ .console-nav { z-index: 24; position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); align-items: stretch; gap: 0; background: color-mix(in srgb, var(--color-panel) 96%, transparent); border-top: 1px solid var(--color-line); padding: 3px 4px max(4px,env(safe-area-inset-bottom)); backdrop-filter: blur(16px); }
+ .console-nav-link { flex-direction: column; gap: 4px; padding: 8px 2px; line-height: 1.2; font-size: 10px; font-weight: 530; }
+ .console-nav-link svg { width: 17px; height: 17px; }
+ .console-nav-link[aria-current="page"]::after { bottom: auto; top: -4px; left: 22%; right: 22%; }
+ .console-brand { font-size: 18px; }
+ .console-brand .orbit-mark { width: 29px; height: 29px; }
+ .console-tools { gap: 10px; }
+ .console-account summary { width: 29px; height: 29px; }
+}
+@media(max-width: 354px) {
+ .console-health { font-size: 10px; gap: 4px; }
+ .console-bar-inner { padding-inline: 12px; gap: 5px; }
+ .console-tools { gap: 6px; }
 }

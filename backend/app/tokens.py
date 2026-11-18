@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal, InvalidOperation
 
 
@@ -31,11 +32,15 @@ def content_to_text(content) -> str:
     return str(content)
 
 
-def estimate_messages(messages: list[dict]) -> int:
+def estimate_messages(messages: list[dict], tools: list[dict] | None = None) -> int:
     total = 0
     for message in messages:
         total += estimate_tokens(content_to_text(message.get("content")))
         total += estimate_tokens(str(message.get("role") or ""))
+        if message.get("tool_calls"):
+            total += estimate_tokens(json.dumps(message["tool_calls"], ensure_ascii=False))
+    if tools:
+        total += estimate_tokens(json.dumps(tools, ensure_ascii=False))
     return total
 
 

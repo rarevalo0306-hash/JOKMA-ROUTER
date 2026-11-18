@@ -68,11 +68,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
         if request.url.path.startswith("/v1"):
+            issue = exc.errors()[0]
+            param = ".".join(str(part) for part in issue["loc"] if part != "body")
             return JSONResponse(
                 status_code=422,
                 content={
                     "error": {
-                        "message": "Invalid request",
+                        "message": issue["msg"],
+                        "param": param or None,
                         "type": "invalid_request_error",
                         "code": "invalid_request",
                     }

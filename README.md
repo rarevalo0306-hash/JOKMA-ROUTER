@@ -13,7 +13,41 @@ La API está en `backend/` (FastAPI). El panel está en `web/` (Next.js, textos 
 - Registro de uso: modelo pedido, modelo servido, tokens, latencia, estado y costo estimado.
 - Panel: proveedores (alta y prueba de conexión), modelos (activar, alias, respaldo, precios), analítica y claves.
 
-Adaptadores reservados, sin implementación propia: `groq`, `gemini`, `deepseek`, `together`, `vllm`. Groq, DeepSeek, Together y vLLM hablan el API de OpenAI: regístralos con el adaptador `openai` y su URL `/v1`. Gemini puede usar su endpoint compatible con OpenAI de la misma forma. Ver [docs/local-and-vps.md](docs/local-and-vps.md) para Ollama y vLLM en localhost, LAN o un VPS (Tailscale, Cloudflare Tunnel o HTTPS).
+Los adaptadores `groq`, `gemini`, `deepseek`, `together` y `vllm` usan el protocolo Chat Completions de OpenAI. Para otros servicios compatibles, elige `openai` y configura la raíz de su API. Para Anthropic y Ollama puedes elegir sus adaptadores nativos. [Conexión de modelos locales y en un VPS](docs/local-and-vps.md)
+
+## Conectar una app con una sola clave
+
+1. En **Proveedores**, guarda la clave de cada servicio que vayas a usar y actívalo. Para Ollama indica la URL que FastAPI puede alcanzar. Pulsa **Probar conexión**.
+2. En **Modelos**, selecciona el proveedor y uno de sus modelos disponibles o escribe el ID exacto. Activa el modelo. Puedes darle un alias como `asistente` y asignarle otro modelo como respaldo. Para mover `asistente`, escribe ese alias en el modelo de destino y confirma **Mover alias y guardar**. La app seguirá enviando el mismo nombre.
+3. En **Claves**, genera una clave y guarda el valor completo en la variable `JOKMA_API_KEY` de tu app. Copia la URL base de **Conectar mi app** a `JOKMA_BASE_URL`. Por defecto es la dirección del panel con `/v1`. Si publicas FastAPI en otro dominio, puedes fijar la URL que muestra el panel con `PUBLIC_API_BASE_URL`, incluido `/v1`.
+4. Instala el paquete Python `openai` en la app y usa su cliente habitual.
+
+```python
+import os
+from openai import OpenAI
+
+router = OpenAI(
+    api_key=os.environ["JOKMA_API_KEY"],
+    base_url=os.environ["JOKMA_BASE_URL"],
+)
+print([model.id for model in router.models.list().data])
+reply = router.chat.completions.create(
+    model="asistente",
+    messages=[{"role": "user", "content": "Hola"}],
+)
+print(reply.choices[0].message.content)
+```
+
+### Capacidades de chat
+
+| Solicitud del cliente | Servicio compatible con OpenAI | Anthropic | Ollama |
+| --- | --- | --- | --- |
+| Texto y streaming | Chat Completions | Messages | `/api/chat` |
+| Imagen en un mensaje | Según el proveedor | URL o imagen en base64 | Imagen en base64 (`data:image/…;base64,…`) |
+| Herramientas de tipo función | Llamadas y resultados | Llamadas y resultados | Llamadas y resultados con modelos compatibles |
+| Salida estructurada | `response_format` según el modelo | `json_schema` | `json_object` o `json_schema` |
+
+Cuando el modelo devuelve `tool_calls`, tu app ejecuta la función y envía el resultado en un mensaje con `role="tool"` y su `tool_call_id`. El router conserva los argumentos y los identificadores también en streaming. Los límites los marca cada modelo. Por ejemplo, el adaptador nativo de Ollama admite la selección automática de herramientas y devuelve un error si se le exige una función específica. La API pública de JOKMA cubre el catálogo y Chat Completions con una respuesta por solicitud.
 
 ## Arranque con Docker
 
@@ -21,7 +55,9 @@ La contraseña `jokma` de Postgres en `docker-compose.yml` es solo la base local
 
 ```bash
 cp .env.example .env
-# Rellena ROUTER_SECRET_KEY y ADMIN_API_KEY.
+# Rellena ROUTER_SECRET_KEY y ADMIN_API_KEY. Para el panel, configura AUTH_SECRET,
+# AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET y PANEL_ALLOWED_EMAILS. Registra en Google
+# la URL de retorno de desarrollo http://localhost:3000/api/auth/callback/google.
 # La clave Fernet:
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
@@ -95,7 +131,9 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 Tests (sin claves reales; OpenAI, Anthropic y Ollama van por mocks de httpx y respx):
 
 ```bash
-cd backend && pip install -r requirements-dev.txt && pytest
+cd backend && pip install -r requirements-dev.txt
+# Incluye la prueba de migraciones con la base local de Docker Compose.
+TEST_POSTGRES_DSN=postgresql://jokma:jokma@127.0.0.1:5432/postgres pytest
 ```
 
 ## Decisiones
@@ -105,6 +143,6 @@ cd backend && pip install -r requirements-dev.txt && pytest
 - **Tokens.** Si el proveedor manda `usage`, se usa tal cual. Si no, se estima con unos 4 caracteres por token. No es un tokenizador.
 - **Costo.** `(entrada * precio_entrada + salida * precio_salida) / 1_000_000`, con la fila de `model_prices` del modelo que respondió. Los precios de ejemplo del SQL son orientativos y se editan en el catálogo.
 - **Latencia.** Milisegundos hasta que termina el stream, no el tiempo hasta el primer token.
-- **Respaldo.** Solo el primer modelo habilitado de la lista, y solo si el primario falla antes de abrir un 200. Un 400 no reintenta. Un adaptador sin implementar (501) tampoco.
+- **Respaldo.** Solo el primer modelo habilitado de la lista, y solo si el primario falla antes de abrir un 200. Un error de solicitud, como un 400, vuelve al cliente.
 - **Admin.** `Authorization: Bearer` con `ADMIN_API_KEY`. El navegador llama a `/api/admin` de Next, que añade la clave en el servidor. No va en `NEXT_PUBLIC_`.
 - **Panel.** `https://router.jokma.app` pide sesión. El inicio es Google OAuth (`AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`) y solo entran los correos de `PANEL_ALLOWED_EMAILS`. Si esa variable no existe, entra únicamente `rarevalo0306@gmail.com`. La URI de redirección en Google Cloud es `https://router.jokma.app/api/auth/callback/google`. Las claves `ak_…` del gateway no cambian.

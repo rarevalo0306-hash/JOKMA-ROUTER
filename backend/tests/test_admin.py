@@ -25,11 +25,11 @@ async def test_provider_and_model_crud(client):
     assert slugs["openai"] is True
     assert slugs["anthropic"] is True
     assert slugs["ollama"] is True
-    assert slugs["groq"] is False
-    assert slugs["gemini"] is False
-    assert slugs["deepseek"] is False
-    assert slugs["together"] is False
-    assert slugs["vllm"] is False
+    assert slugs["groq"] is True
+    assert slugs["gemini"] is True
+    assert slugs["deepseek"] is True
+    assert slugs["together"] is True
+    assert slugs["vllm"] is True
     assert slugs["video"] is False
 
     provider = await create_provider(client, name="vps", adapter="openai", base_url="http://10.0.0.8:8001/v1")

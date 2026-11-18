@@ -1,4 +1,6 @@
+import os
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 from decimal import Decimal
 
 import asyncpg
@@ -42,13 +44,17 @@ def test_sql_splitter_keeps_the_rls_block_intact():
 
 async def test_migration_applies_on_postgres():
     name = f"jokma_{uuid.uuid4().hex[:10]}"
+    configured_url = os.getenv("TEST_POSTGRES_DSN")
+    admin_url = configured_url or "postgresql://ubuntu@/postgres?host=/var/run/postgresql"
     try:
-        admin = await asyncpg.connect(user="ubuntu", database="postgres", host="/var/run/postgresql")
+        admin = await asyncpg.connect(admin_url)
     except Exception as exc:
+        if configured_url:
+            raise
         pytest.skip(f"local postgres is not available: {exc}")
     await admin.execute(f'create database "{name}"')
     await admin.close()
-    url = f"postgresql://ubuntu@/{name}?host=/var/run/postgresql"
+    url = urlunsplit(urlsplit(admin_url)._replace(path=f"/{name}"))
     try:
         applied = await apply_migrations(url, SQL.parent)
         assert applied == [
@@ -59,7 +65,7 @@ async def test_migration_applies_on_postgres():
         ]
         again = await apply_migrations(url, SQL.parent)
         assert again == []
-        connection = await asyncpg.connect(user="ubuntu", database=name, host="/var/run/postgresql")
+        connection = await asyncpg.connect(url)
         tables = {
             row["tablename"]
             for row in await connection.fetch(
@@ -234,6 +240,6 @@ async def test_migration_applies_on_postgres():
         assert "Fernet" in comment
         await connection.close()
     finally:
-        admin = await asyncpg.connect(user="ubuntu", database="postgres", host="/var/run/postgresql")
+        admin = await asyncpg.connect(admin_url)
         await admin.execute(f'drop database if exists "{name}"')
         await admin.close()

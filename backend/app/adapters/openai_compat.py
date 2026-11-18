@@ -13,34 +13,17 @@ from app.adapters.base import (
     send_checked,
     timeout_for,
 )
+from app.adapters.catalog import fetch_model_names
 
 
 class OpenAIAdapter(ProviderAdapter):
-    slug = "openai"
-    implemented = True
-    summary = (
-        "OpenAI chat completions. Also the practical path for Groq, Together, "
-        "DeepSeek, and vLLM: point base_url at their OpenAI-compatible /v1 root."
-    )
+    summary = "Chat Completions sobre la URL base compatible con OpenAI."
 
-    async def test_connection(self, client, *, base_url, api_key, timeout) -> str:
-        headers = _headers(api_key)
-        try:
-            response = await client.get(
-                join_url(base_url, "models"),
-                headers=headers,
-                timeout=timeout_for(min(timeout, 15)),
-            )
-        except httpx.TimeoutException as exc:
-            raise AdapterError(504, "upstream timeout", True) from exc
-        except httpx.TransportError as exc:
-            raise AdapterError(502, "upstream connection failed", True) from exc
-        if response.status_code >= 400:
-            raise AdapterError(response.status_code, f"upstream status {response.status_code}", False)
-        payload = response.json()
-        data = payload.get("data") if isinstance(payload, dict) else None
-        count = len(data) if isinstance(data, list) else 0
-        return f"reachable, {count} models listed"
+    def __init__(self, slug: str = "openai"):
+        self.slug = slug
+
+    async def discover_models(self, client, *, base_url, api_key, timeout) -> list[str]:
+        return await fetch_model_names(client, join_url(base_url, "models"), _headers(api_key), timeout)
 
     async def open_chat(
         self,
@@ -53,8 +36,17 @@ class OpenAIAdapter(ProviderAdapter):
         temperature,
         max_tokens,
         timeout,
+        options: dict | None = None,
     ) -> OpenedStream:
-        payload: dict = {
+        options = options or {}
+        for name in ("audio", "functions", "function_call", "top_logprobs", "web_search_options"):
+            if options.get(name) is not None:
+                raise AdapterError(400, f"{name} is not supported by this chat gateway", False)
+        if options.get("logprobs") or options.get("modalities") not in (None, ["text"]):
+            raise AdapterError(400, "logprobs and non-text output modalities are not supported", False)
+
+        payload = {
+            **options,
             "model": model,
             "messages": messages,
             "stream": True,
@@ -82,39 +74,58 @@ def _headers(api_key: str | None) -> dict[str, str]:
     return headers
 
 
+def _content_text(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and all(
+        isinstance(part, dict) and isinstance(part.get("text"), str) for part in content
+    ):
+        return "".join(part["text"] for part in content)
+    raise AdapterError(502, "unsupported upstream chat content", False)
+
+
 async def _parse_openai(response: httpx.Response) -> AsyncIterator[ChatChunk]:
-    async for _event, data in iter_sse_events(response):
-        if not data or data == "[DONE]":
-            if data == "[DONE]":
-                break
-            continue
+    received_choice = False
+    finished = False
+    async for event, data in iter_sse_events(response):
+        if data == "[DONE]":
+            if not received_choice:
+                raise AdapterError(502, "upstream returned no chat choices", False)
+            return
         try:
             payload = json.loads(data)
-        except json.JSONDecodeError:
-            continue
-        usage = payload.get("usage") if isinstance(payload, dict) else None
-        prompt_tokens = completion_tokens = None
-        if isinstance(usage, dict):
-            prompt_tokens = usage.get("prompt_tokens")
-            completion_tokens = usage.get("completion_tokens")
-        choices = payload.get("choices") if isinstance(payload, dict) else None
-        content = ""
-        finish = None
-        if isinstance(choices, list) and choices:
-            choice = choices[0] or {}
+        except ValueError as exc:
+            raise AdapterError(502, "invalid upstream event", False) from exc
+        if not isinstance(payload, dict) or event == "error" or payload.get("error"):
+            raise AdapterError(502, "upstream chat stream failed", False)
+        usage = payload.get("usage") or {}
+        choices = payload.get("choices") or []
+        chunk = ChatChunk(
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+        )
+        if choices:
+            if len(choices) != 1 or choices[0].get("index", 0) != 0:
+                raise AdapterError(502, "unexpected number of upstream choices", False)
+            received_choice = True
+            choice = choices[0]
             delta = choice.get("delta") or choice.get("message") or {}
-            raw_content = delta.get("content")
-            if isinstance(raw_content, str):
-                content = raw_content
-            elif isinstance(raw_content, list):
-                content = "".join(
-                    part.get("text", "") for part in raw_content if isinstance(part, dict)
-                )
-            finish = choice.get("finish_reason")
-        if content or finish or prompt_tokens is not None or completion_tokens is not None:
-            yield ChatChunk(
-                content=content,
-                finish_reason=finish,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
+            if choice.get("logprobs") or any(delta.get(key) for key in ("audio", "function_call", "annotations")):
+                raise AdapterError(502, "unsupported upstream chat output", False)
+            chunk.content = _content_text(delta.get("content"))
+            chunk.refusal = _content_text(delta.get("refusal"))
+            chunk.reasoning_content = _content_text(delta.get("reasoning_content") or delta.get("reasoning"))
+            chunk.tool_calls = delta.get("tool_calls") or []
+            for call in chunk.tool_calls:
+                if not isinstance(call, dict) or not isinstance(call.get("index"), int):
+                    raise AdapterError(502, "upstream tool call is missing its index", False)
+                if call.get("type") not in (None, "function"):
+                    raise AdapterError(502, "unsupported upstream tool type", False)
+            chunk.finish_reason = choice.get("finish_reason")
+            finished = finished or bool(chunk.finish_reason)
+        if choices or usage:
+            yield chunk
+    if not finished:
+        raise AdapterError(502, "upstream chat stream ended unexpectedly", False)

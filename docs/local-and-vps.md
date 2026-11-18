@@ -21,9 +21,9 @@ En el panel:
 - Adaptador: `ollama`
 - URL base: `http://127.0.0.1:11434`
 - Sin clave
-- Modelo: `llama3.2:3b` (el nombre que devuelve `ollama list`, sin barra)
+- Modelo: `llama3.2:3b` (el nombre que devuelve `ollama list`)
 
-El id público queda `local/llama3.2:3b`. Si el nombre del modelo lleva `:`, es válido. No uses `/` dentro del nombre: la barra separa proveedor y modelo.
+El id público queda `local/llama3.2:3b`. Si el nombre del modelo lleva `:`, es válido. La primera barra separa proveedor y modelo. Si el nombre upstream incluye un espacio de nombres como `equipo/modelo`, consérvalo.
 
 Si JOKMA corre en Docker y Ollama en el host, la URL suele ser `http://host.docker.internal:11434` (Docker Desktop) o la IP del puente. `127.0.0.1` dentro del contenedor es el propio contenedor.
 
@@ -51,7 +51,7 @@ Prueba con **Probar conexión**. Una respuesta correcta lista los modelos de `/a
 
 ## vLLM
 
-vLLM ya habla el API de OpenAI. El adaptador llamado `vllm` está reservado y no está implementado. Registra el servidor con el adaptador `openai` y una URL que termine en `/v1`.
+vLLM expone Chat Completions. Registra el servidor con el adaptador `vllm` o `openai` y una URL que termine en `/v1`.
 
 ### Local
 

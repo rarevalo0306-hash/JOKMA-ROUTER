@@ -7,6 +7,7 @@ export function gateDecision(
   email: string | null | undefined,
   allowlist?: string,
 ): Gate {
+  if (pathname === "/v1/models" || pathname === "/v1/chat/completions") return "allow";
   if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) return "allow";
   const allowed = isAllowedEmail(email, allowlist);
   if (pathname === "/login") return allowed ? "dashboard" : "allow";

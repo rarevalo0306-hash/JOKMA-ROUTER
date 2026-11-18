@@ -9,7 +9,7 @@ from app.adapters import AdapterError, get_adapter
 from app.adapters.base import OpenedStream
 from app.config import Settings
 from app.orm import Model, ModelFallback, ModelPrice, Provider
-from app.security import decrypt_secret
+from app.security import decrypt_secret, scrub
 from app.tokens import as_decimal
 
 
@@ -126,6 +126,7 @@ async def open_with_fallback(
     messages: list[dict],
     temperature: float | None,
     max_tokens: int | None,
+    options: dict | None = None,
 ) -> OpenRoute:
     """Try the primary route. On timeout, 429, or 5xx, try one fallback.
 
@@ -151,8 +152,10 @@ async def open_with_fallback(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 timeout=settings.request_timeout_seconds,
+                options=options,
             )
         except AdapterError as exc:
+            exc.message = scrub(exc.message, candidate.api_key)[:500]
             attempts.append(
                 {
                     "model": candidate.public_id,

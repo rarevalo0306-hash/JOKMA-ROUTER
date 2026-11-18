@@ -11,6 +11,18 @@ class ChatChunk:
     finish_reason: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    tool_calls: list[dict] = field(default_factory=list)
+    refusal: str = ""
+    reasoning_content: str = ""
+
+    def delta(self) -> dict:
+        fields = {
+            "content": self.content,
+            "tool_calls": self.tool_calls,
+            "refusal": self.refusal,
+            "reasoning_content": self.reasoning_content,
+        }
+        return {key: value for key, value in fields.items() if value}
 
 
 @dataclass
@@ -62,7 +74,18 @@ class ProviderAdapter:
         api_key: str | None,
         timeout: float,
     ) -> str:
-        raise NotImplementedError
+        models = await self.discover_models(client, base_url=base_url, api_key=api_key, timeout=timeout)
+        return f"reachable, {len(models)} models listed"
+
+    async def discover_models(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        base_url: str,
+        api_key: str | None,
+        timeout: float,
+    ) -> list[str]:
+        raise AdapterError(400, "El proveedor no admite el catálogo de modelos de chat", False)
 
     async def open_chat(
         self,
@@ -74,6 +97,7 @@ class ProviderAdapter:
         messages: list[dict],
         temperature: float | None,
         max_tokens: int | None,
+        options: dict | None = None,
         timeout: float,
     ) -> OpenedStream:
         raise NotImplementedError
@@ -107,7 +131,7 @@ def upstream_message(status_code: int, body: bytes) -> str:
     text = " ".join(text.split())
     if not text:
         text = f"upstream status {status_code}"
-    return text[:500]
+    return text
 
 
 def retryable_status(status_code: int) -> bool:
@@ -133,14 +157,8 @@ async def send_checked(client: httpx.AsyncClient, request: httpx.Request) -> htt
 
 
 async def iter_lines(response: httpx.Response) -> AsyncIterator[str]:
-    buffer = ""
-    async for chunk in response.aiter_bytes():
-        buffer += chunk.decode("utf-8", errors="replace")
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            yield line.rstrip("\r")
-    if buffer:
-        yield buffer.rstrip("\r")
+    async for line in response.aiter_lines():
+        yield line
 
 
 async def iter_sse_events(response: httpx.Response) -> AsyncIterator[tuple[str | None, str]]:

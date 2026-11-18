@@ -79,7 +79,7 @@ export async function GET(request: Request) {
     if (!email) return fail(origin, "oauth", secure);
     if (!isAllowedEmail(email, readEnv("PANEL_ALLOWED_EMAILS"))) return fail(origin, "denied", secure);
 
-    const response = NextResponse.redirect(new URL("/proveedores", origin));
+    const response = NextResponse.redirect(new URL("/", origin));
     clearOauth(response, secure);
     response.cookies.set({
       name: SESSION_COOKIE,

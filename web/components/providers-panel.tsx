@@ -1,404 +1,305 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { readError } from "@/lib/format";
-import { groupProviders, providerTitle } from "@/lib/provider-groups";
+import { groupProviders, isVideoProvider, providerTitle } from "@/lib/provider-groups";
 import type { AdapterInfo, Provider } from "@/lib/types";
+import { Brand } from "./provider-brand";
+import "./providers.css";
 
-const field =
-  "mt-1 w-full rounded-xl border border-line bg-ink px-3 py-2 text-sm text-paper outline-none";
+const icons = {
+  add: <path d="M12 5v14M5 12h14" />,
+  search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
+  settings: <><path d="M4 6h7m5 0h4M4 12h2m5 0h9M4 18h9m5 0h2" /><circle cx="13.5" cy="6" r="2.5" /><circle cx="8.5" cy="12" r="2.5" /><circle cx="15.5" cy="18" r="2.5" /></>,
+  chat: <path d="M6 4h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5.5 4v-4H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />,
+  video: <><rect x="3" y="6" width="12" height="12" rx="2" /><path d="m15 10 6-3v10l-6-3" /></>,
+  server: <><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /><path d="M7 7.5h.1M7 16.5h.1" /></>,
+  all: <><rect x="3" y="3" width="7" height="7" rx="1.2" /><rect x="14" y="3" width="7" height="7" rx="1.2" /><rect x="3" y="14" width="7" height="7" rx="1.2" /><rect x="14" y="14" width="7" height="7" rx="1.2" /></>,
+  check: <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>,
+  key: <><circle cx="8" cy="9" r="4" /><path d="m11 12 8 8 2-2-2-2 1.5-1.5-2-2L17 14" /></>,
+  close: <path d="m6 6 12 12M18 6 6 18" />,
+  arrow: <path d="M6 18 18 6M7 6h11v11" />,
+};
 
-export function ProvidersPanel({
-  providers,
-  adapters,
-}: {
-  providers: Provider[];
-  adapters: AdapterInfo[];
+function Icon({ name, size = 16 }: { name: keyof typeof icons; size?: number }) {
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{icons[name]}</svg>;
+}
+
+function displayHost(base: string) {
+  try { return new URL(base).host; } catch { return base; }
+}
+
+function needsCredential(provider: Provider) {
+  // Presets link to their credential issuer. Custom endpoints can use keyless authentication.
+  return !provider.has_api_key && Boolean(provider.key_url);
+}
+
+function stateLabel(provider: Provider) {
+  if (needsCredential(provider)) return "Falta clave";
+  if (isVideoProvider(provider)) return provider.has_api_key ? "Clave guardada" : "Sin clave";
+  return provider.enabled ? "Habilitado" : "Deshabilitado";
+}
+
+function protocol(provider: Provider) {
+  if (isVideoProvider(provider)) return "Vídeo";
+  if (provider.adapter === "ollama") return "Ollama";
+  if (provider.adapter === "anthropic") return "Anthropic Messages";
+  return "Compatible con OpenAI";
+}
+
+type Category = "Todos los tipos" | "Chat" | "Vídeo" | "Personalizados";
+type Connection = "Todos" | "Configurados" | "Falta clave";
+
+function FilterChoice({ text, icon, count, active, onClick }: {
+  text: Category | Connection; icon: keyof typeof icons; count: number; active: boolean; onClick: () => void;
 }) {
-  const grouped = groupProviders(providers);
-
   return (
-    <section>
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold">Proveedores</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          Cada tarjeta ya trae el nombre, el adaptador y la dirección. Solo falta pegar la clave.
-          El enlace abre la página donde se crea esa clave.
-        </p>
+    <button className="pv-choice" type="button" aria-pressed={active} onClick={onClick}>
+      <Icon name={icon} size={15} /><span>{text}</span><small aria-hidden="true">{count}</small>
+    </button>
+  );
+}
+
+export function ProvidersPanel({ providers, adapters }: { providers: Provider[]; adapters: AdapterInfo[] }) {
+  const grouped = groupProviders(providers);
+  const custom = new Set(grouped.rest.map((p) => p.id));
+  const catalog = [...grouped.chat, ...grouped.rest, ...grouped.video];
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<Category>("Todos los tipos");
+  const [connection, setConnection] = useState<Connection>("Todos");
+  const [openFilters, setOpenFilters] = useState(false);
+  const [modal, setModal] = useState<string | null>(null);
+  const selected = providers.find((p) => p.id === modal);
+  const search = query.trim().toLocaleLowerCase("es");
+  const categories: { name: Category; icon: keyof typeof icons; match: (p: Provider) => boolean }[] = [
+    { name: "Todos los tipos", icon: "all", match: () => true },
+    { name: "Chat", icon: "chat", match: (p) => !isVideoProvider(p) },
+    { name: "Vídeo", icon: "video", match: isVideoProvider },
+    { name: "Personalizados", icon: "server", match: (p) => custom.has(p.id) },
+  ];
+  const connections: { name: Connection; icon: keyof typeof icons; match: (p: Provider) => boolean }[] = [
+    { name: "Todos", icon: "all", match: () => true },
+    { name: "Configurados", icon: "check", match: (p) => !needsCredential(p) },
+    { name: "Falta clave", icon: "key", match: needsCredential },
+  ];
+  const matchCategory = categories.find((item) => item.name === category)!.match;
+  const matchConnection = connections.find((item) => item.name === connection)!.match;
+  const matches = catalog.filter((provider) =>
+    [providerTitle(provider), provider.name, provider.adapter, displayHost(provider.base_url)]
+      .some((value) => value.toLocaleLowerCase("es").includes(search)),
+  );
+  const visible = matches.filter((p) => matchCategory(p) && matchConnection(p));
+
+  function clearFilters() {
+    setConnection("Todos");
+    setCategory("Todos los tipos");
+    setQuery("");
+  }
+  const filtered = category !== "Todos los tipos" || connection !== "Todos" || Boolean(query);
+  return (
+    <section className="pv-page">
+      <header className="pv-heading">
+        <div><h1>Proveedores</h1><p>Conecta servicios de IA y servidores propios a tu API.</p></div>
+        <button type="button" className="pv-primary" onClick={() => setModal("add")}><Icon name="add" size={17} />Añadir proveedor</button>
       </header>
-
-      <PresetSection title="Chat y código" providers={grouped.chat} />
-      <PresetSection title="Vídeo" providers={grouped.video} video />
-
-      {grouped.rest.length > 0 ? (
-        <div className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">Otros</h2>
-          <ul className="space-y-3">
-            {grouped.rest.map((provider) => (
-              <li key={provider.id}>
-                <ProviderCard provider={provider} />
-              </li>
-            ))}
-          </ul>
+      <div className="pv-directory">
+        <aside className="pv-filters" aria-label="Filtros del directorio" data-open={openFilters}>
+          <div className="pv-filter-title">
+            <h2><Icon name="settings" size={16} />Filtros</h2>
+            <button className="pv-filter-toggle" type="button" aria-controls="pv-filter-options" aria-expanded={openFilters} onClick={() => setOpenFilters(!openFilters)}>
+              {openFilters ? "Ocultar" : "Mostrar"}
+            </button>
+          </div>
+          <div id="pv-filter-options">
+            <fieldset><legend>Configuración</legend>
+              {connections.map((item) => <FilterChoice key={item.name} text={item.name} icon={item.icon} count={matches.filter((p) => matchCategory(p) && item.match(p)).length} active={connection === item.name} onClick={() => setConnection(item.name)} />)}
+            </fieldset>
+            <fieldset><legend>Tipo de proveedor</legend>
+              {categories.map((item) => <FilterChoice key={item.name} text={item.name} icon={item.icon} count={matches.filter((p) => matchConnection(p) && item.match(p)).length} active={category === item.name} onClick={() => setCategory(item.name)} />)}
+            </fieldset>
+            {filtered && <button type="button" className="pv-clear" onClick={clearFilters}>Limpiar filtros</button>}
+          </div>
+        </aside>
+        <div className="pv-results">
+          <div className="pv-directory-head">
+            <label className="pv-search"><Icon name="search" size={17} /><input aria-label="Buscar proveedores" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por proveedor o dominio…" /></label>
+            <p aria-live="polite">{visible.length} {visible.length === 1 ? "proveedor" : "proveedores"}</p>
+          </div>
+          {visible.length ? (
+            <ul className="pv-grid">
+              {visible.map((provider) => {
+                const label = stateLabel(provider);
+                const video = isVideoProvider(provider);
+                return (
+                  <li key={provider.id} data-brand={provider.name}>
+                    <button type="button" className="pv-card" aria-label={`Configurar ${providerTitle(provider)}`} onClick={() => setModal(provider.id)}>
+                      <span className="pv-card-head">
+                        <Brand provider={provider} />
+                        <span className="pv-card-settings" aria-hidden="true"><Icon name="settings" size={16} /></span>
+                      </span>
+                      <span className="pv-name">{providerTitle(provider)}</span>
+                      <span className="pv-host">{displayHost(provider.base_url)}</span>
+                      <span className="pv-foot">
+                        <span className="pv-protocol"><Icon name={video ? "video" : custom.has(provider.id) ? "server" : "chat"} size={14} />{protocol(provider)}</span>
+                        <span className="pv-status" data-state={label}><i />{label}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : <div className="pv-empty" role="status"><Icon name="search" size={22} /><p>{providers.length ? "No se encontraron proveedores." : "Añade tu primer proveedor para conectar sus modelos."}</p>{filtered && <button className="pv-clear" type="button" onClick={clearFilters}>Limpiar filtros</button>}</div>}
         </div>
-      ) : null}
+      </div>
 
-      <OtherProviderForm adapters={adapters} />
+      {modal === "add" ? (
+        <SettingsDialog title="Añadir proveedor" onClose={() => setModal(null)}>
+          <ProviderForm adapters={adapters} onCreated={() => { setModal(null); clearFilters(); }} />
+        </SettingsDialog>
+      ) : selected ? (
+        <SettingsDialog title={providerTitle(selected)} brand={<Brand provider={selected} />} onClose={() => setModal(null)}>
+          <ProviderSettings provider={selected} custom={custom.has(selected.id)} onDelete={() => setModal(null)} />
+        </SettingsDialog>
+      ) : null}
     </section>
   );
 }
 
-function PresetSection({
-  title,
-  providers,
-  video = false,
-}: {
-  title: string;
-  providers: Provider[];
-  video?: boolean;
-}) {
-  if (providers.length === 0) return null;
+function SettingsDialog({ title, brand, onClose, children }: { title: string; brand?: ReactNode; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    const opener = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
   return (
-    <div className={video ? "mt-8" : ""}>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      <ul className="grid gap-3 lg:grid-cols-2">
-        {providers.map((provider) => (
-          <li key={provider.id}>
-            <PresetCard provider={provider} video={video || provider.kind === "video"} />
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PresetCard({ provider, video }: { provider: Provider; video: boolean }) {
-  const router = useRouter();
-  const [message, setMessage] = useState<string | null>(null);
-  const [ok, setOk] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  const stub = provider.adapter === "gemini";
-
-  async function saveKey(formData: FormData) {
-    const apiKey = String(formData.get("api_key") || "").trim();
-    if (!apiKey) {
-      setOk(false);
-      setMessage("Pega la clave antes de guardar.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
-    const response = await fetch(`/api/admin/providers/${provider.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey }),
-    });
-    setBusy(false);
-    if (!response.ok) {
-      setOk(false);
-      setMessage(await readError(response));
-      return;
-    }
-    setOk(true);
-    setMessage("Clave guardada");
-    (document.getElementById(`key-${provider.id}`) as HTMLFormElement | null)?.reset();
-    router.refresh();
-  }
-
-  return (
-    <article className="flex h-full flex-col rounded-2xl border border-line bg-panel p-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-lg font-semibold">{providerTitle(provider)}</h3>
-        <span className="rounded-full border border-line px-2 py-0.5 text-xs text-muted">
-          {video ? "Vídeo" : "Chat"}
-        </span>
+    <dialog ref={ref} aria-labelledby="pv-dialog-title" className="pv-dialog"
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pv-dialog-interior">
+        <header>{brand}<h2 id="pv-dialog-title">{title}</h2><button type="button" aria-label="Cerrar ajustes" onClick={onClose}><Icon name="close" size={18} /></button></header>
+        {children}
       </div>
-      {video ? (
-        <p className="mt-2 text-sm text-muted">
-          El gateway solo hace chat. Esta tarjeta guarda la clave y no envía completions.
-        </p>
-      ) : (
-        <p className="mono mt-2 break-all text-sm text-muted">
-          {provider.adapter} · {provider.base_url}
-        </p>
-      )}
-      {stub ? (
-        <p className="mt-2 text-sm text-muted">
-          El adaptador de Gemini todavía no enruta llamadas. Puedes guardar la clave; el chat no
-          sale por aquí.
-        </p>
-      ) : null}
-      {provider.name === "openrouter" ? (
-        <p className="mt-2 text-sm text-muted">
-          El modelo se escribe con el autor, por ejemplo openai/gpt-4o. Esa ruta completa es la que
-          recibe OpenRouter.
-        </p>
-      ) : null}
-      <p className="mt-2 text-xs text-muted">
-        {provider.has_api_key ? `Clave guardada ····${provider.api_key_last4}` : "Sin clave"}
-      </p>
-      {provider.key_url ? (
-        <a
-          href={provider.key_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 text-sm font-medium text-accent"
-        >
-          Obtener clave
-        </a>
-      ) : null}
-      <form id={`key-${provider.id}`} action={saveKey} className="mt-4 grid gap-3">
-        <label className="text-sm">
-          Clave API
-          <input
-            name="api_key"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Pega la clave"
-            className={field}
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
-        >
-          {busy ? "Guardando…" : "Guardar clave"}
-        </button>
-      </form>
-      {message ? (
-        <p role="status" className={`mt-3 text-sm ${ok ? "text-ok" : "text-danger"}`}>
-          {message}
-        </p>
-      ) : null}
-    </article>
+    </dialog>
   );
 }
 
-function OtherProviderForm({ adapters }: { adapters: AdapterInfo[] }) {
+async function changeProvider(path: string, method: string, payload?: Record<string, unknown>) {
+  const response = await fetch(path, {
+    method,
+    ...(payload && { headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response;
+}
+
+function ProviderForm({ adapters, onCreated }: { adapters: AdapterInfo[]; onCreated: () => void }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-
-  async function onCreate(formData: FormData) {
+  const [error, setError] = useState("");
+  async function create(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
     setPending(true);
-    setError(null);
-    const apiKey = String(formData.get("api_key") || "");
-    const response = await fetch("/api/admin/providers", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: String(formData.get("name") || ""),
-        adapter: String(formData.get("adapter") || ""),
-        base_url: String(formData.get("base_url") || ""),
-        api_key: apiKey || null,
-        enabled: formData.get("enabled") === "on",
-      }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError(await readError(response));
-      return;
-    }
-    (document.getElementById("provider-form") as HTMLFormElement | null)?.reset();
-    router.refresh();
+    setError("");
+    try {
+      await changeProvider("/api/admin/providers", "POST", {
+        name: String(data.get("name")).trim(), adapter: data.get("adapter"), base_url: String(data.get("base_url")).trim(),
+        api_key: String(data.get("api_key") || "").trim() || null, enabled: data.has("enabled"),
+      });
+      router.refresh();
+      onCreated();
+    } catch (err) { setError(err instanceof Error ? err.message : "No se pudo crear el proveedor."); }
+    finally { setPending(false); }
   }
-
   return (
-    <details className="mt-8 rounded-2xl border border-line bg-panel p-5">
-      <summary className="cursor-pointer text-sm font-semibold">Agregar otro proveedor</summary>
-      <form id="provider-form" action={onCreate} className="mt-4 grid gap-4 md:grid-cols-2">
-        <label className="block text-sm">
-          Nombre
-          <input name="name" required placeholder="vllm" className={field} autoComplete="off" />
-        </label>
-        <label className="block text-sm">
-          Adaptador
-          <select name="adapter" className={field} defaultValue="openai">
-            {adapters.map((adapter) => (
-              <option key={adapter.slug} value={adapter.slug}>
-                {adapter.slug}
-                {adapter.implemented ? "" : " (sin implementar)"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm md:col-span-2">
-          URL base
-          <input
-            name="base_url"
-            required
-            placeholder="https://api.openai.com/v1"
-            className={field}
-            inputMode="url"
-          />
-        </label>
-        <label className="block text-sm md:col-span-2">
-          Clave API
-          <input
-            name="api_key"
-            type="password"
-            placeholder="Opcional para Ollama local"
-            className={field}
-            autoComplete="new-password"
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input name="enabled" type="checkbox" defaultChecked className="h-4 w-4 accent-citron" />
-          Habilitado
-        </label>
-        <div className="md:text-right">
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-60"
-          >
-            {pending ? "Guardando…" : "Guardar proveedor"}
-          </button>
-        </div>
-        {error ? (
-          <p role="alert" className="text-sm text-danger md:col-span-2">
-            No se pudo guardar: {error}
-          </p>
-        ) : null}
-      </form>
-    </details>
+    <form onSubmit={create} className="pv-fields">
+      <label>Nombre<input name="name" placeholder="mi-servidor" required autoComplete="off" /></label>
+      <label>Adaptador<select name="adapter" defaultValue="openai">{adapters.map((a) => <option key={a.slug} value={a.slug}>{a.slug}{a.implemented ? "" : " (sin implementar)"}</option>)}</select></label>
+      <label>URL base accesible desde el router<input name="base_url" type="url" required placeholder="http://localhost:11434" /></label>
+      <label>Clave API<input name="api_key" type="password" autoComplete="new-password" placeholder="Opcional para servidores locales" /></label>
+      <label className="pv-check"><input name="enabled" type="checkbox" defaultChecked />Habilitado</label>
+      {error && <p className="pv-error" role="alert">{error}</p>}
+      <button className="pv-primary" disabled={pending}>{pending ? "Guardando…" : "Guardar proveedor"}</button>
+    </form>
   );
 }
 
-function ProviderCard({ provider }: { provider: Provider }) {
+function ProviderSettings({ provider, custom, onDelete }: { provider: Provider; custom: boolean; onDelete: () => void }) {
   const router = useRouter();
-  const [message, setMessage] = useState<string | null>(null);
-  const [ok, setOk] = useState<boolean | null>(null);
+  const form = useRef<HTMLFormElement>(null);
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const url = `/api/admin/providers/${provider.id}`;
+  const video = isVideoProvider(provider);
 
-  async function testConnection() {
+  async function perform(action: () => Promise<string>) {
     setBusy(true);
-    setMessage(null);
-    const response = await fetch(`/api/admin/providers/${provider.id}/test`, { method: "POST" });
-    const body = (await response.json()) as { ok?: boolean; detail?: string };
-    setBusy(false);
-    setOk(Boolean(body.ok));
-    setMessage(body.detail || (body.ok ? "Conectado" : "Falló la prueba"));
+    setFeedback(null);
+    try {
+      const text = await action();
+      setFeedback({ ok: true, text });
+    } catch (err) { setFeedback({ ok: false, text: err instanceof Error ? err.message : "Error de conexión" }); }
+    finally { setBusy(false); }
   }
-
-  async function toggle() {
-    setBusy(true);
-    await fetch(`/api/admin/providers/${provider.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: !provider.enabled }),
-    });
-    setBusy(false);
-    router.refresh();
-  }
-
-  async function remove() {
-    if (!window.confirm("¿Eliminar este proveedor? También se borran sus modelos.")) return;
-    setBusy(true);
-    await fetch(`/api/admin/providers/${provider.id}`, { method: "DELETE" });
-    setBusy(false);
-    router.refresh();
-  }
-
-  async function saveEdit(formData: FormData) {
-    const baseUrl = String(formData.get("base_url") || "");
-    const apiKey = String(formData.get("api_key") || "");
-    const clear = formData.get("clear_key") === "on";
-    const payload: Record<string, string | null> = {};
-    if (baseUrl && baseUrl !== provider.base_url) payload.base_url = baseUrl;
-    if (clear) payload.api_key = "";
-    else if (apiKey) payload.api_key = apiKey;
-    if (Object.keys(payload).length === 0) return;
-    setBusy(true);
-    const response = await fetch(`/api/admin/providers/${provider.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    setBusy(false);
-    if (!response.ok) {
-      setOk(false);
-      setMessage(await readError(response));
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const changes: Record<string, unknown> = {};
+    if (custom && data.get("base_url") !== provider.base_url) changes.base_url = String(data.get("base_url") || "").trim();
+    const key = String(data.get("api_key") || "").trim();
+    if (data.has("clear_key")) changes.api_key = "";
+    else if (key) changes.api_key = key;
+    if (!video && data.has("enabled") !== provider.enabled) changes.enabled = data.has("enabled");
+    if (!Object.keys(changes).length) {
+      setFeedback({ ok: true, text: "Los ajustes ya están guardados." });
       return;
     }
-    setOk(true);
-    setMessage("Cambios guardados");
-    router.refresh();
+    await perform(async () => {
+      await changeProvider(url, "PATCH", changes);
+      const keyInput = form.current?.elements.namedItem("api_key") as HTMLInputElement | null;
+      if (keyInput) keyInput.value = "";
+      router.refresh();
+      return "Ajustes guardados.";
+    });
   }
-
+  async function test() {
+    await perform(async () => {
+      const response = await changeProvider(url + "/test", "POST");
+      const body: { ok: boolean; detail?: string } = await response.json();
+      if (!body.ok) throw new Error(body.detail || "Falló la conexión.");
+      return body.detail || "Conexión verificada.";
+    });
+  }
+  async function remove() {
+    if (!window.confirm(`¿Eliminar ${providerTitle(provider)} y sus modelos?`)) return;
+    await perform(async () => {
+      await changeProvider(url, "DELETE");
+      router.refresh();
+      onDelete();
+      return "Proveedor eliminado.";
+    });
+  }
   return (
-    <article className="rounded-2xl border border-line bg-panel p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">
-            {providerTitle(provider)}{" "}
-            <span className="mono text-sm font-normal text-muted">{provider.adapter}</span>
-          </h2>
-          <p className="mono mt-1 break-all text-sm text-muted">{provider.base_url}</p>
-          <p className="mt-1 text-xs text-muted">
-            {provider.has_api_key ? `Clave guardada ····${provider.api_key_last4}` : "Sin clave"}
-            {provider.enabled ? " · habilitado" : " · deshabilitado"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={testConnection}
-            disabled={busy}
-            className="rounded-full border border-line px-3 py-1.5 text-sm"
-          >
-            Probar conexión
-          </button>
-          <button
-            type="button"
-            onClick={toggle}
-            disabled={busy}
-            aria-pressed={provider.enabled}
-            className="rounded-full border border-line px-3 py-1.5 text-sm"
-          >
-            {provider.enabled ? "Deshabilitar" : "Habilitar"}
-          </button>
-          <button
-            type="button"
-            onClick={remove}
-            disabled={busy}
-            className="rounded-full border border-danger/40 px-3 py-1.5 text-sm text-danger"
-          >
-            Eliminar
-          </button>
-        </div>
+    <form ref={form} onSubmit={save} className="pv-fields">
+      <p className="pv-meta">{video ? "Este proveedor permite guardar credenciales para vídeo." : `Adaptador · ${provider.adapter}`}</p>
+      {provider.name === "openrouter" && <p className="pv-meta">Usa el nombre completo del modelo, por ejemplo openai/gpt-4o.</p>}
+      <label>URL base<input name="base_url" defaultValue={provider.base_url} readOnly={!custom} type="url" required /></label>
+      <label>Clave API<input name="api_key" type="password" autoComplete="new-password" placeholder={provider.has_api_key ? `Guardada ····${provider.api_key_last4 || ""}` : "Pega tu clave"} /></label>
+      {provider.key_url && <a href={provider.key_url} target="_blank" rel="noopener noreferrer">Obtener clave <Icon name="arrow" size={13} /></a>}
+      {provider.has_api_key && <label className="pv-check"><input name="clear_key" type="checkbox" />Borrar la clave guardada</label>}
+      {!video && <label className="pv-check"><input name="enabled" type="checkbox" defaultChecked={provider.enabled} />Habilitar en el router</label>}
+      {feedback && <p role="status" className={feedback.ok ? "pv-success" : "pv-error"}>{feedback.text}</p>}
+      <div className="pv-actions">
+        <button className="pv-primary" disabled={busy}>{busy ? "Procesando…" : "Guardar cambios"}</button>
+        {!video && <button className="pv-secondary" type="button" onClick={test} disabled={busy}>Probar conexión</button>}
+        {custom && <button className="pv-delete" type="button" onClick={remove} disabled={busy}>Eliminar</button>}
       </div>
-      {message ? (
-        <p role="status" className={`mt-3 text-sm ${ok ? "text-ok" : "text-danger"}`}>
-          {message}
-        </p>
-      ) : null}
-      <details className="mt-3 text-sm">
-        <summary className="cursor-pointer text-muted">Cambiar URL o clave</summary>
-        <form action={saveEdit} className="mt-3 grid gap-3">
-          <label>
-            URL base
-            <input name="base_url" defaultValue={provider.base_url} className={field} />
-          </label>
-          <label>
-            Nueva clave
-            <input name="api_key" type="password" autoComplete="new-password" className={field} />
-          </label>
-          <label className="flex items-center gap-2">
-            <input name="clear_key" type="checkbox" className="h-4 w-4 accent-citron" />
-            Borrar la clave guardada
-          </label>
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-fit rounded-full bg-citron px-4 py-2 text-sm font-semibold text-on-accent"
-          >
-            Guardar cambios
-          </button>
-        </form>
-      </details>
-    </article>
+    </form>
   );
 }

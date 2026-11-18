@@ -31,3 +31,10 @@ test("a signed-in address outside the allowlist is treated as logged out", () =>
   assert.equal(gateDecision("/modelos", "otra@gmail.com"), "login");
   assert.equal(gateDecision("/api/admin/keys", "otra@gmail.com"), "unauthorized");
 });
+
+test("SDK endpoints use the gateway bearer and stay reachable without a panel session", () => {
+  assert.equal(gateDecision("/v1/models", null), "allow");
+  assert.equal(gateDecision("/v1/chat/completions", null), "allow");
+  assert.equal(gateDecision("/v1/admin/providers", null), "login");
+  assert.equal(gateDecision("/api/admin/providers", null), "unauthorized");
+});

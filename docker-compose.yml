@@ -24,6 +24,8 @@ services:
       ROUTER_SECRET_KEY: ${ROUTER_SECRET_KEY:?set ROUTER_SECRET_KEY}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
       CORS_ORIGINS: http://localhost:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
@@ -47,6 +49,12 @@ services:
       dockerfile: web/Dockerfile
     environment:
       API_INTERNAL_URL: http://api:8000
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      PANEL_ALLOWED_EMAILS: ${PANEL_ALLOWED_EMAILS-rarevalo0306@gmail.com}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY}
     ports:
       - "3000:3000"

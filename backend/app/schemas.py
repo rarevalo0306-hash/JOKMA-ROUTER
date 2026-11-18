@@ -1,6 +1,7 @@
 import re
 import uuid
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -12,7 +13,26 @@ ALIAS_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 class ChatMessage(BaseModel):
     role: str
-    content: object | None = None
+    content: str | list | None = None
+    tool_calls: list[dict] | None = None
+    tool_call_id: str | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class StreamOptions(BaseModel):
+    include_usage: bool = False
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChatFunction(BaseModel):
+    name: str = Field(min_length=1)
+    parameters: dict | None = None
+    model_config = ConfigDict(extra="allow")
+
+
+class ChatTool(BaseModel):
+    type: Literal["function"]
+    function: ChatFunction
     model_config = ConfigDict(extra="allow")
 
 
@@ -22,7 +42,34 @@ class ChatRequest(BaseModel):
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = Field(default=None, ge=1)
-    model_config = ConfigDict(extra="ignore")
+    tools: list[ChatTool] | None = None
+    tool_choice: Literal["auto", "none", "required"] | dict | None = None
+    parallel_tool_calls: bool | None = None
+    max_completion_tokens: int | None = Field(default=None, ge=1)
+    response_format: dict | None = None
+    stream_options: StreamOptions | None = None
+    n: Literal[1] = 1
+    model_config = ConfigDict(extra="allow")
+
+    @field_validator("response_format")
+    @classmethod
+    def valid_response_format(cls, value: dict | None) -> dict | None:
+        if value is None:
+            return None
+        if value.get("type") not in ("text", "json_object", "json_schema"):
+            raise ValueError("Unknown response_format type")
+        if value["type"] == "json_schema":
+            definition = value.get("json_schema")
+            if not isinstance(definition, dict) or not isinstance(definition.get("schema"), dict):
+                raise ValueError("response_format requires a JSON schema")
+        return value
+
+    def adapter_options(self) -> dict:
+        options = self.model_dump(
+            exclude={"model", "messages", "stream", "stream_options", "temperature", "max_tokens", "n"},
+            exclude_unset=True,
+        )
+        return {key: value for key, value in options.items() if value is not None}
 
 
 class ProviderIn(BaseModel):
@@ -122,6 +169,8 @@ class ModelIn(BaseModel):
 
 class ModelUpdate(BaseModel):
     alias: str | None = None
+    expected_alias: str | None = None
+    transfer_alias_from: uuid.UUID | None = None
     enabled: bool | None = None
     fallback_model_ids: list[uuid.UUID] | None = None
     input_per_million: Decimal | None = None

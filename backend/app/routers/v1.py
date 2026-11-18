@@ -16,7 +16,7 @@ from app.security import hash_api_key
 from app.adapters import AdapterError
 from app.services.gateway import ModelNotFound, RouteFailed, open_with_fallback, resolve_model
 from app.services.usage import UsageAccumulator, record_usage
-from app.tokens import content_to_text, estimate_cost, estimate_messages, estimate_tokens
+from app.tokens import estimate_cost, estimate_messages
 
 router = APIRouter(prefix="/v1")
 
@@ -121,13 +121,6 @@ def _route_headers(public_id: str, used_fallback: bool) -> dict[str, str]:
     }
 
 
-def _normalized_messages(payload: ChatRequest) -> list[dict]:
-    return [
-        {"role": message.role, "content": content_to_text(message.content)}
-        for message in payload.messages
-    ]
-
-
 @router.post("/chat/completions")
 async def chat_completions(
     payload: ChatRequest,
@@ -136,7 +129,9 @@ async def chat_completions(
     session: Annotated[AsyncSession, Depends(get_db)],
 ):
     settings = request.app.state.settings
-    messages = _normalized_messages(payload)
+    messages = [message.model_dump(exclude_unset=True) for message in payload.messages]
+    options = payload.adapter_options()
+    estimated_prompt = estimate_messages(messages, options.get("tools"))
     started = time.perf_counter()
     key_id = api_key.id
     app_name = api_key.app_name
@@ -158,6 +153,7 @@ async def chat_completions(
             messages,
             payload.temperature,
             payload.max_tokens,
+            options,
         )
     except RouteFailed as exc:
         await record_usage(
@@ -166,7 +162,7 @@ async def chat_completions(
             app_name=app_name,
             model_requested=payload.model,
             model_served=None,
-            prompt_tokens=estimate_messages(messages),
+            prompt_tokens=estimated_prompt,
             completion_tokens=0,
             latency_ms=_latency(started),
             status="error",
@@ -182,30 +178,21 @@ async def chat_completions(
     status_name = "fallback" if opened.used_fallback else "success"
 
     async def persist(status: str, http_status: int, error: str | None) -> None:
-        prompt_tokens = (
-            accumulator.prompt_tokens
-            if accumulator.prompt_tokens is not None
-            else estimate_messages(messages)
-        )
-        completion_tokens = (
-            accumulator.completion_tokens
-            if accumulator.completion_tokens is not None
-            else estimate_tokens(accumulator.text)
-        )
+        usage = accumulator.usage(estimated_prompt)
         await record_usage(
             sessionmaker,
             api_key_id=key_id,
             app_name=app_name,
             model_requested=payload.model,
             model_served=served.public_id,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
             latency_ms=_latency(started),
             status=status,
             http_status=http_status,
             estimated_cost=estimate_cost(
-                prompt_tokens,
-                completion_tokens,
+                usage["prompt_tokens"],
+                usage["completion_tokens"],
                 served.input_per_million,
                 served.output_per_million,
             ),
@@ -226,16 +213,6 @@ async def chat_completions(
             await persist("error", 502, "upstream stream interrupted")
             raise APIError(502, "upstream stream interrupted", "provider_error", "upstream_error") from exc
         await persist(status_name, 200, None)
-        prompt_tokens = (
-            accumulator.prompt_tokens
-            if accumulator.prompt_tokens is not None
-            else estimate_messages(messages)
-        )
-        completion_tokens = (
-            accumulator.completion_tokens
-            if accumulator.completion_tokens is not None
-            else estimate_tokens(accumulator.text)
-        )
         body = {
             "id": completion_id,
             "object": "chat.completion",
@@ -244,15 +221,11 @@ async def chat_completions(
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": accumulator.text},
-                    "finish_reason": accumulator.finish_reason or "stop",
+                    "message": accumulator.message,
+                    "finish_reason": accumulator.finish_reason,
                 }
             ],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
+            "usage": accumulator.usage(estimated_prompt),
         }
         return JSONResponse(body, headers=headers)
 
@@ -261,40 +234,29 @@ async def chat_completions(
         try:
             async for chunk in opened.stream:
                 accumulator.add(chunk)
-                if not chunk.content:
+                delta = chunk.delta()
+                if not delta:
                     continue
-                delta = {"content": chunk.content}
                 if not sent_role:
                     delta["role"] = "assistant"
                     sent_role = True
                 yield _chunk(completion_id, created, payload.model, delta, None)
             if not sent_role:
                 yield _chunk(completion_id, created, payload.model, {"role": "assistant"}, None)
-            prompt_tokens = (
-                accumulator.prompt_tokens
-                if accumulator.prompt_tokens is not None
-                else estimate_messages(messages)
-            )
-            completion_tokens = (
-                accumulator.completion_tokens
-                if accumulator.completion_tokens is not None
-                else estimate_tokens(accumulator.text)
-            )
-            usage = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            }
+            usage = accumulator.usage(estimated_prompt)
+            # Preserve the original final chunk for callers without stream_options.
             yield _chunk(
-                completion_id,
-                created,
-                payload.model,
-                {},
-                accumulator.finish_reason or "stop",
-                usage,
+                completion_id, created, payload.model, {},
+                accumulator.finish_reason,
+                usage if payload.stream_options is None else None,
             )
-            yield "data: [DONE]\n\n"
+            if payload.stream_options and payload.stream_options.include_usage:
+                yield _sse({
+                    "id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": payload.model, "choices": [], "usage": usage,
+                })
             await persist(status_name, 200, None)
+            yield "data: [DONE]\n\n"
         except Exception:
             await persist("error", 502, "upstream stream interrupted")
             yield _sse(
