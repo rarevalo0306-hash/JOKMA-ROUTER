@@ -2,13 +2,13 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters import AdapterError, get_adapter
 from app.adapters.base import OpenedStream
 from app.config import Settings
-from app.orm import Model, ModelFallback, ModelPrice, Provider
+from app.orm import ApiKey, ApiKeyModel, Model, ModelFallback, ModelPrice, Provider
 from app.security import decrypt_secret, scrub
 from app.tokens import as_decimal
 
@@ -66,7 +66,22 @@ def _resolved(model: Model, provider: Provider, price: ModelPrice | None, settin
     )
 
 
-async def resolve_model(session: AsyncSession, settings: Settings, model_ref: str) -> ResolvedModel:
+def visible_models(stmt: Select, api_key: ApiKey | None) -> Select:
+    stmt = stmt.where(
+        Model.enabled.is_(True),
+        Provider.enabled.is_(True),
+        Provider.kind != "video",
+        Provider.adapter != "video",
+    )
+    if api_key is not None and api_key.restrict_models:
+        allowed = select(ApiKeyModel.model_id).where(ApiKeyModel.api_key_id == api_key.id)
+        stmt = stmt.where(Model.id.in_(allowed))
+    return stmt
+
+
+async def resolve_model(
+    session: AsyncSession, settings: Settings, model_ref: str, *, api_key: ApiKey | None = None
+) -> ResolvedModel:
     ref = model_ref.strip()
     if not ref:
         raise ModelNotFound()
@@ -84,19 +99,15 @@ async def resolve_model(session: AsyncSession, settings: Settings, model_ref: st
         stmt = stmt.where(Provider.name == provider_name, Model.name == model_name)
     else:
         stmt = stmt.where(Model.alias == ref)
-    row = (await session.execute(stmt)).first()
+    row = (await session.execute(visible_models(stmt, api_key))).first()
     if row is None:
         raise ModelNotFound()
     model, provider, price = row
-    if not model.enabled or not provider.enabled:
-        raise ModelNotFound()
-    if provider.kind == "video" or provider.adapter == "video":
-        raise ModelNotFound()
     return _resolved(model, provider, price, settings)
 
 
 async def first_fallback(
-    session: AsyncSession, settings: Settings, model_id: uuid.UUID
+    session: AsyncSession, settings: Settings, model_id: uuid.UUID, *, api_key: ApiKey | None = None
 ) -> ResolvedModel | None:
     stmt = (
         select(Model, Provider, ModelPrice)
@@ -106,11 +117,7 @@ async def first_fallback(
         .where(ModelFallback.model_id == model_id)
         .order_by(ModelFallback.position)
     )
-    for model, provider, price in (await session.execute(stmt)).all():
-        if not model.enabled or not provider.enabled:
-            continue
-        if provider.kind == "video" or provider.adapter == "video":
-            continue
+    for model, provider, price in (await session.execute(visible_models(stmt, api_key))).all():
         try:
             return _resolved(model, provider, price, settings)
         except AdapterError:
@@ -127,6 +134,8 @@ async def open_with_fallback(
     temperature: float | None,
     max_tokens: int | None,
     options: dict | None = None,
+    *,
+    api_key: ApiKey | None = None,
 ) -> OpenRoute:
     """Try the primary route. On timeout, 429, or 5xx, try one fallback.
 
@@ -134,7 +143,7 @@ async def open_with_fallback(
     failure after tokens have started streaming is not retried.
     """
     candidates = [primary]
-    fallback = await first_fallback(session, settings, primary.model_id)
+    fallback = await first_fallback(session, settings, primary.model_id, api_key=api_key)
     if fallback is not None and fallback.public_id != primary.public_id:
         candidates.append(fallback)
 

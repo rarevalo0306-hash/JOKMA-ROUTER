@@ -199,6 +199,7 @@ class ModelUpdate(BaseModel):
 class ApiKeyIn(BaseModel):
     """One label. app_name stays for usage rows and defaults to the name."""
 
+    model_ids: list[uuid.UUID] | None = None
     name: str = Field(min_length=1, max_length=120)
     app_name: str | None = Field(default=None, max_length=120)
 
@@ -217,3 +218,7 @@ class ApiKeyIn(BaseModel):
             return None
         value = value.strip()
         return value or None
+
+
+class ApiKeyUpdate(BaseModel):
+    model_ids: list[uuid.UUID] | None

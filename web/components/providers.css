@@ -105,7 +105,11 @@
 .pv-fields input:read-only { color: var(--color-muted); }
 .pv-fields .pv-check { flex-direction: row; align-items: center; gap: 8px; }
 .pv-check input { width: 15px; height: 15px; accent-color: var(--color-accent); }
-.pv-fields a { display: inline-flex; align-items: center; gap: 4px; justify-self: start; font-size: 12px; color: var(--pv-accent); }
+.pv-key-field { display: grid; gap: 5px; min-width: 0; }
+.pv-key-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; font-size: 13px; }
+.pv-portal-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 100%; padding: 6px 11px; border: 1px solid var(--color-citron); border-radius: 7px; background: var(--color-panel-2); color: var(--color-accent); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.pv-portal-link svg { flex: none; }
+.pv-portal-link:hover { color: var(--color-ink); background: var(--color-accent); border-color: var(--color-accent); }
 .pv-actions { justify-content: start; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .pv-actions .pv-delete { margin-left: auto; }
 .pv-meta, .pv-success, .pv-error { margin: 0; font-size: 13px; overflow-wrap: anywhere; }

@@ -42,7 +42,7 @@ def test_sql_splitter_keeps_the_rls_block_intact():
     assert "api_key_encrypted" in joined
 
 
-async def test_migration_applies_on_postgres():
+async def test_migration_applies_on_postgres(tmp_path):
     name = f"jokma_{uuid.uuid4().hex[:10]}"
     configured_url = os.getenv("TEST_POSTGRES_DSN")
     admin_url = configured_url or "postgresql://ubuntu@/postgres?host=/var/run/postgresql"
@@ -55,17 +55,38 @@ async def test_migration_applies_on_postgres():
     await admin.execute(f'create database "{name}"')
     await admin.close()
     url = urlunsplit(urlsplit(admin_url)._replace(path=f"/{name}"))
+    connection = None
     try:
-        applied = await apply_migrations(url, SQL.parent)
-        assert applied == [
+        scope_file = "20261118000000_api_key_models.sql"
+        for migration in SQL.parent.glob("*.sql"):
+            if migration.name < scope_file:
+                (tmp_path / migration.name).symlink_to(migration)
+        assert await apply_migrations(url, tmp_path) == [
             "20261101043500_init_gateway.sql",
             "20261102003400_current_chat_models.sql",
             "20261102031500_provider_key_presets.sql",
             "20261102061200_openrouter_and_model_slashes.sql",
         ]
-        again = await apply_migrations(url, SQL.parent)
-        assert again == []
         connection = await asyncpg.connect(url)
+        old_key = await connection.fetchval(
+            """insert into api_keys (name, app_name, key_prefix, key_hash)
+               values ('original', 'demo', 'ak_demo', repeat('a',64)) returning id"""
+        )
+        assert await apply_migrations(url, SQL.parent) == [scope_file]
+        assert await apply_migrations(url, SQL.parent) == []
+        assert await connection.fetchval("select restrict_models from api_keys where id=$1", old_key) is False
+        model = await connection.fetchval(
+            """insert into models (provider_id, name)
+               select id, 'temporary-model' from providers where name='local' returning id"""
+        )
+        await connection.execute("update api_keys set restrict_models=true where id=$1", old_key)
+        await connection.execute("insert into api_key_models (api_key_id, model_id) values ($1,$2)", old_key, model)
+        await connection.execute("delete from models where id=$1", model)
+        assert await connection.fetchval("select restrict_models from api_keys where id=$1", old_key) is True
+        assert await connection.fetchval("select count(*) from api_key_models where api_key_id=$1", old_key) == 0
+        assert await connection.fetchval(
+            "select relrowsecurity from pg_class where relname='api_key_models'"
+        ) is True
         tables = {
             row["tablename"]
             for row in await connection.fetch(
@@ -78,6 +99,7 @@ async def test_migration_applies_on_postgres():
             "model_fallbacks",
             "model_prices",
             "api_keys",
+            "api_key_models",
             "usage_logs",
         } <= tables
         rls = await connection.fetchval(
@@ -238,8 +260,9 @@ async def test_migration_applies_on_postgres():
             """
         )
         assert "Fernet" in comment
-        await connection.close()
     finally:
+        if connection is not None:
+            await connection.close()
         admin = await asyncpg.connect(admin_url)
         await admin.execute(f'drop database if exists "{name}"')
         await admin.close()

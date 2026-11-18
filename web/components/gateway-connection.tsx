@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { CatalogModel } from "@/lib/types";
-
-export type GatewayModel = Pick<CatalogModel, "public_id" | "alias">;
+import { when } from "@/lib/format";
+import type { ApiKeyRecord, GatewayModel } from "@/lib/types";
 
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -38,10 +37,18 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
 const languages = ["Python", "JavaScript"] as const;
 type Language = (typeof languages)[number];
 
-function codeExample(language: Language, base: string, model: string) {
+function codeExample(language: Language, base: string, model?: string) {
   const url = JSON.stringify(base);
   const id = JSON.stringify(model);
   if (language === "JavaScript") {
+    const action = model
+      ? `const chat = await client.chat.completions.create({
+  model: ${id},
+  messages: [{ role: "user", content: "Hola" }],
+});
+console.log(chat.choices[0].message.content);`
+      : `const menu = await client.models.list();
+console.log(menu.data.map(model => model.id));`;
     return `import OpenAI from "openai";
 
 const client = new OpenAI({
@@ -49,12 +56,16 @@ const client = new OpenAI({
   apiKey: process.env.JOKMA_API_KEY,
 });
 
-const chat = await client.chat.completions.create({
-  model: ${id},
-  messages: [{ role: "user", content: "Hola" }],
-});
-console.log(chat.choices[0].message.content);`;
+${action}`;
   }
+  const action = model
+    ? `chat = client.chat.completions.create(
+    model=${id},
+    messages=[{"role": "user", "content": "Hola"}],
+)
+print(chat.choices[0].message.content)`
+    : `menu = client.models.list()
+print([model.id for model in menu.data])`;
   return `import os
 from openai import OpenAI
 
@@ -63,11 +74,7 @@ client = OpenAI(
     api_key=os.environ["JOKMA_API_KEY"],
 )
 
-chat = client.chat.completions.create(
-    model=${id},
-    messages=[{"role": "user", "content": "Hola"}],
-)
-print(chat.choices[0].message.content)`;
+${action}`;
 }
 
 // Highlight the displayed source as text so configuration values never become HTML.
@@ -79,17 +86,32 @@ function highlight(line: string) {
   });
 }
 
-export function GatewayConnection({ models, publicBase }: { models: GatewayModel[]; publicBase?: string }) {
+export function GatewayConnection({ keys, models, publicBase }: {
+  keys: ApiKeyRecord[];
+  models: GatewayModel[];
+  publicBase?: string;
+}) {
   const [origin, setOrigin] = useState("");
+  const [keyId, setKeyId] = useState("");
   const [selection, setSelection] = useState("");
+  const [example, setExample] = useState("chat");
   const [language, setLanguage] = useState<Language>("Python");
   useEffect(() => setOrigin(window.location.origin), []);
 
   const base = publicBase || (origin && `${origin}/v1`);
-  const selected = models.some((m) => m.public_id === selection || m.alias === selection)
-    ? selection
-    : models.find((m) => m.alias)?.alias || models[0]?.public_id;
-  const source = selected && base ? codeExample(language, base, selected) : "";
+  const activeKeys = keys.filter((key) => !key.revoked_at);
+  const key = activeKeys.find((item) => item.id === keyId) ?? activeKeys[0];
+  const allowed = key?.model_ids == null ? null : new Set(key.model_ids);
+  const options = models.filter((model) => model.available && (!allowed || allowed.has(model.id)))
+    .flatMap((model) => {
+      const canonical = { value: model.public_id, label: model.public_id };
+      return !allowed && model.alias
+        ? [{ value: model.alias, label: `${model.alias} (alias)` }, canonical]
+        : [canonical];
+    });
+  const selected = options.find((option) => option.value === selection)?.value ?? options[0]?.value;
+  const listMenu = example === "menu";
+  const source = base && (listMenu || selected) ? codeExample(language, base, listMenu ? undefined : selected) : "";
 
   return (
     <section id="conectar-mi-app" aria-labelledby="connect-app" className="min-w-0 scroll-mt-24 rounded-2xl border border-line bg-panel">
@@ -107,22 +129,38 @@ export function GatewayConnection({ models, publicBase }: { models: GatewayModel
               <CopyButton value={base} label="Copiar URL" />
             </div>
           </div>
-          {selected ? (
+          {key && (
             <label className="block text-sm font-medium">
-              Modelo o alias
+              Clave de la aplicación
+              <select value={key.id} onChange={(event) => setKeyId(event.target.value)}
+                className="mt-2 block min-h-11 w-full rounded-xl border border-line bg-ink px-3 text-sm text-paper">
+                {activeKeys.map((item) => <option key={item.id} value={item.id}>{item.name} · {when(item.created_at)}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="block text-sm font-medium">
+            Ejemplo de integración
+            <select value={example} onChange={(event) => setExample(event.target.value)}
+              className="mt-2 block min-h-11 w-full rounded-xl border border-line bg-ink px-3 text-sm text-paper">
+              <option value="chat">Enviar un mensaje</option>
+              <option value="menu">Cargar el menú de modelos</option>
+            </select>
+          </label>
+          {listMenu ? (
+            <p className="text-sm leading-relaxed text-muted">Usa los identificadores que devuelve <code>GET /v1/models</code> como opciones del menú de tu app.</p>
+          ) : selected ? (
+            <label className="block text-sm font-medium">
+              Modelo del mensaje
               <select value={selected} onChange={(event) => setSelection(event.target.value)}
                 className="mono mt-2 block min-h-11 w-full rounded-xl border border-line bg-ink px-3 text-xs text-paper">
-                {models.map((model) => (
-                  <optgroup key={model.public_id} label={model.public_id}>
-                    {model.alias && <option value={model.alias}>{model.alias} (alias)</option>}
-                    <option value={model.public_id}>{model.public_id}</option>
-                  </optgroup>
-                ))}
+                {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
           ) : (
             <p className="text-sm leading-relaxed text-muted">
-              Activa un <Link href="/proveedores" className="text-accent underline">proveedor</Link> y añade un <Link href="/modelos" className="text-accent underline">modelo</Link> para generar el ejemplo.
+              {allowed
+                ? <>El menú de esta clave está vacío o sus modelos están inactivos. Revisa <a href="#keys-list" className="text-accent underline">Tus claves</a> y <Link href="/modelos" className="text-accent underline">Modelos</Link>.</>
+                : <>Activa un <Link href="/proveedores" className="text-accent underline">proveedor</Link> y añade un <Link href="/modelos" className="text-accent underline">modelo</Link> para generar el ejemplo.</>}
             </p>
           )}
           <p className="text-sm leading-relaxed text-muted">Guarda la clave del router en la variable <code className="text-paper">JOKMA_API_KEY</code> del servidor de tu app.</p>

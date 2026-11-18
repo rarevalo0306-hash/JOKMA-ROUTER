@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters import AdapterError, get_adapter, list_adapters
 from app.db import get_db
-from app.orm import ApiKey, Model, ModelFallback, ModelPrice, Provider, UsageLog
-from app.schemas import ApiKeyIn, ModelIn, ModelUpdate, ProviderIn, ProviderUpdate
+from app.orm import ApiKey, ApiKeyModel, Model, ModelFallback, ModelPrice, Provider, UsageLog
+from app.schemas import ApiKeyIn, ApiKeyUpdate, ModelIn, ModelUpdate, ProviderIn, ProviderUpdate
 from app.security import decrypt_secret, encrypt_secret, generate_api_key, scrub, secrets_equal
 from app.tokens import as_decimal
 
@@ -365,12 +365,13 @@ async def delete_model(model_id: uuid.UUID, _admin: Admin, session: Db):
     await session.delete(model)
 
 
-def _key_out(row: ApiKey, raw_key: str | None = None) -> dict:
+def _key_out(row: ApiKey, model_ids: list[uuid.UUID] | None, raw_key: str | None = None) -> dict:
     payload = {
         "id": str(row.id),
         "name": row.name,
         "app_name": row.app_name,
         "key_prefix": row.key_prefix,
+        "model_ids": model_ids,
         "revoked_at": _iso(row.revoked_at),
         "last_used_at": _iso(row.last_used_at),
         "created_at": _iso(row.created_at),
@@ -380,36 +381,86 @@ def _key_out(row: ApiKey, raw_key: str | None = None) -> dict:
     return payload
 
 
+async def _replace_key_models(session: Db, row: ApiKey, model_ids: list[uuid.UUID] | None) -> None:
+    if model_ids:
+        if len(set(model_ids)) != len(model_ids):
+            raise HTTPException(400, "Hay modelos repetidos en la selección.")
+        valid = await session.scalars(
+            select(Model.id)
+            .join(Provider, Provider.id == Model.provider_id)
+            .where(Model.id.in_(model_ids), Provider.kind == "chat", Provider.adapter != "video")
+            .order_by(Model.id)
+            .with_for_update(read=True)
+        )
+        if set(valid) != set(model_ids):
+            raise HTTPException(400, "Selecciona modelos de chat existentes.")
+
+    await session.execute(delete(ApiKeyModel).where(ApiKeyModel.api_key_id == row.id))
+    session.add_all(ApiKeyModel(api_key_id=row.id, model_id=model_id) for model_id in model_ids or [])
+    await session.flush()
+
+
 @router.get("/api-keys")
 async def list_api_keys(_admin: Admin, session: Db):
-    rows = (await session.execute(select(ApiKey).order_by(ApiKey.created_at.desc()))).scalars().all()
-    return [_key_out(row) for row in rows]
+    rows = await session.execute(
+        select(ApiKey, ApiKeyModel.model_id)
+        .outerjoin(ApiKeyModel, ApiKey.id == ApiKeyModel.api_key_id)
+        .order_by(ApiKey.created_at.desc(), ApiKey.id, ApiKeyModel.model_id)
+    )
+    keys = {}
+    for key, model_id in rows:
+        if key.id not in keys:
+            keys[key.id] = _key_out(key, [] if key.restrict_models else None)
+        if key.restrict_models and model_id is not None:
+            keys[key.id]["model_ids"].append(model_id)
+    return list(keys.values())
 
 
 @router.post("/api-keys", status_code=201)
 async def create_api_key(payload: ApiKeyIn, _admin: Admin, session: Db):
-    # No maximum. Each call mints a new ak_ token. The raw value is returned
-    # once here and is not stored.
     raw, key_hash, prefix = generate_api_key()
     row = ApiKey(
         name=payload.name,
         app_name=payload.app_name or payload.name,
         key_prefix=prefix,
         key_hash=key_hash,
+        restrict_models=payload.model_ids is not None,
     )
     session.add(row)
     await session.flush()
-    return _key_out(row, raw)
+    if payload.model_ids is not None:
+        await _replace_key_models(session, row, payload.model_ids)
+    return _key_out(row, payload.model_ids, raw)
+
+
+@router.patch("/api-keys/{key_id}")
+async def update_api_key(key_id: uuid.UUID, payload: ApiKeyUpdate, _admin: Admin, session: Db):
+    # Acquire the write lock before replacing grants, even when the restriction
+    # flag already has this value. SQLite and PostgreSQL both serialize writers.
+    row = await session.scalar(
+        update(ApiKey).where(ApiKey.id == key_id)
+        .values(restrict_models=payload.model_ids is not None).returning(ApiKey)
+    )
+    if row is None:
+        raise HTTPException(404, "API key not found")
+    await _replace_key_models(session, row, payload.model_ids)
+    return _key_out(row, payload.model_ids)
 
 
 @router.post("/api-keys/{key_id}/revoke")
 async def revoke_api_key(key_id: uuid.UUID, _admin: Admin, session: Db):
-    row = await session.get(ApiKey, key_id)
+    row = await session.scalar(
+        update(ApiKey).where(ApiKey.id == key_id)
+        .values(revoked_at=func.coalesce(ApiKey.revoked_at, datetime.now(timezone.utc))).returning(ApiKey)
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="API key not found")
-    if row.revoked_at is None:
-        row.revoked_at = datetime.now(timezone.utc)
-    return _key_out(row)
+    model_ids = None
+    if row.restrict_models:
+        model_ids = list(await session.scalars(
+            select(ApiKeyModel.model_id).where(ApiKeyModel.api_key_id == key_id).order_by(ApiKeyModel.model_id)
+        ))
+    return _key_out(row, model_ids)
 
 
 @router.get("/usage/summary")

@@ -1,11 +1,12 @@
 "use client";
 
-import { CopyButton, GatewayConnection, type GatewayModel } from "@/components/gateway-connection";
+import { CopyButton, GatewayConnection } from "@/components/gateway-connection";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { readError, when } from "@/lib/format";
 import { maskApiKey } from "@/lib/mask-key";
-import type { ApiKeyRecord } from "@/lib/types";
+import type { ApiKeyRecord, GatewayModel } from "@/lib/types";
+import { KeyModelMenu, menuLabel, menuMatchesResponse, modelMenuDraft } from "./key-model-menu";
 
 function KeyIcon({ size = 20 }: { size?: number }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -25,22 +26,39 @@ export function KeysPanel({ keys, models, publicBase }: {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  async function onCreate(formData: FormData) {
+  const [newMenu, setNewMenu] = useState(() => modelMenuDraft(null));
+
+  async function onCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     setPending(true);
     setError(null);
     try {
       const response = await fetch("/api/admin/api-keys", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: String(formData.get("name") || "").trim() }),
+        body: JSON.stringify({
+          name: String(formData.get("name") || "").trim(),
+          model_ids: newMenu.limited ? newMenu.ids : null,
+        }),
       });
       if (!response.ok) {
         setError(await readError(response));
         return;
       }
       const body = (await response.json()) as ApiKeyRecord;
+      if (newMenu.limited && !menuMatchesResponse(newMenu, body.model_ids)) {
+        const revocation = await fetch(`/api/admin/api-keys/${body.id}/revoke`, { method: "POST" }).catch(() => null);
+        const status = revocation?.ok
+          ? "La clave recién creada se revocó."
+          : `Revisa «${body.name}» en Tus claves y revócala si sigue activa.`;
+        setError(`El servidor no confirmó el menú solicitado. ${status} Actualiza la API y aplica sus migraciones antes de reintentar.`);
+        router.refresh();
+        return;
+      }
       setRevealed(body);
       setCreating(false);
+      setNewMenu(modelMenuDraft(null));
       router.refresh();
     } catch {
       setError("Se perdió la conexión. Revisa la lista antes de crear otra clave.");
@@ -58,7 +76,7 @@ export function KeysPanel({ keys, models, publicBase }: {
         </div>
         {!revealed && (
           <button type="button" aria-expanded={creating} aria-controls="key-form" disabled={pending}
-            onClick={() => { setCreating(!creating); setError(null); }}
+            onClick={() => { setCreating(!creating); setError(null); setNewMenu(modelMenuDraft(null)); }}
             className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${creating ? "border border-line text-paper hover:bg-panel" : "bg-citron text-on-accent hover:bg-accent hover:text-ink"}`}>
             <span aria-hidden="true" className="text-lg font-normal leading-none">{creating ? "×" : "+"}</span>
             {creating ? "Cancelar" : "Crear clave"}
@@ -67,13 +85,14 @@ export function KeysPanel({ keys, models, publicBase }: {
       </header>
 
       {creating && (
-        <form id="key-form" action={onCreate} className="grid items-end gap-4 rounded-2xl border border-accent/35 bg-panel p-5 sm:grid-cols-[1fr_auto] sm:p-6">
+        <form id="key-form" onSubmit={onCreate} className="grid min-w-0 gap-4 rounded-2xl border border-accent/35 bg-panel p-5 sm:p-6">
           <label className="text-sm font-medium">
             Nombre de la aplicación
             <input name="name" required maxLength={120} autoFocus placeholder="Ej. Asistente de facturas" autoComplete="off"
               className="mt-2 block min-h-11 w-full rounded-xl border border-line bg-ink px-3.5 text-sm text-paper placeholder:text-muted/65" />
           </label>
-          <button type="submit" disabled={pending} className="min-h-11 rounded-xl bg-citron px-4 text-sm font-semibold text-on-accent hover:bg-accent hover:text-ink disabled:opacity-60">
+          <KeyModelMenu models={models} draft={newMenu} onChange={setNewMenu} disabled={pending} />
+          <button type="submit" disabled={pending} className="min-h-11 justify-self-start rounded-xl bg-citron px-4 text-sm font-semibold text-on-accent hover:bg-accent hover:text-ink disabled:opacity-60">
             {pending ? "Generando…" : "Generar clave"}
           </button>
         </form>
@@ -105,23 +124,55 @@ export function KeysPanel({ keys, models, publicBase }: {
           <p className="px-5 py-7 text-sm text-muted sm:px-6">Crea tu primera clave para conectar una aplicación.</p>
         ) : (
           <ul className="divide-y divide-line">
-            {keys.map((key) => <KeyRow key={key.id} apiKey={key} onRevoked={() => {
+            {keys.map((key) => <KeyRow key={key.id} apiKey={key} models={models} onRevoked={() => {
               if (revealed?.id === key.id) setRevealed(null);
             }} />)}
           </ul>
         )}
       </section>
 
-      <GatewayConnection models={models} publicBase={publicBase} />
+      <GatewayConnection keys={keys} models={models} publicBase={publicBase} />
     </section>
   );
 }
 
-function KeyRow({ apiKey, onRevoked }: { apiKey: ApiKeyRecord; onRevoked: () => void }) {
+function KeyRow({ apiKey, models, onRevoked }: { apiKey: ApiKeyRecord; models: GatewayModel[]; onRevoked: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [menu, setMenu] = useState<ReturnType<typeof modelMenuDraft> | null>(null);
+  const [refreshing, startRefresh] = useTransition();
   const revoked = Boolean(apiKey.revoked_at);
+
+  async function saveMenu(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!menu) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/api-keys/${apiKey.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model_ids: menu.limited ? menu.ids : null }),
+      });
+      if (!response.ok) {
+        setError(await readError(response));
+        return;
+      }
+      const saved = (await response.json()) as ApiKeyRecord;
+      if (!menuMatchesResponse(menu, saved.model_ids)) {
+        setError("El servidor no confirmó el nuevo menú. Actualiza la API y aplica sus migraciones antes de reintentar.");
+        router.refresh();
+        return;
+      }
+      setMenu(null);
+      startRefresh(() => router.refresh());
+    } catch {
+      setError("Se perdió la conexión al guardar el menú. Puedes volver a intentarlo.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function revoke() {
     if (!window.confirm(`¿Revocar «${apiKey.name}»? Las aplicaciones que la usen dejarán de tener acceso.`)) return;
@@ -143,20 +194,39 @@ function KeyRow({ apiKey, onRevoked }: { apiKey: ApiKeyRecord; onRevoked: () => 
   }
 
   return (
-    <li className="grid min-w-0 grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 px-5 py-4 sm:flex sm:flex-wrap sm:px-6">
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-semibold text-paper">{apiKey.name}</p>
-        <p className="mt-1 text-xs text-muted"><code>{maskApiKey(apiKey.key_prefix)}</code> · Creada {when(apiKey.created_at)}</p>
+    <li className="min-w-0 px-5 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-[1_1_165px]">
+          <p className="break-words text-sm font-semibold text-paper">{apiKey.name}</p>
+          <p className="mt-1 text-xs text-muted"><code>{maskApiKey(apiKey.key_prefix)}</code> · Creada {when(apiKey.created_at)}</p>
+          <p className="mt-1 text-xs text-muted">Menú · {menuLabel(apiKey.model_ids)}</p>
+        </div>
+        <span title={revoked ? `Revocada ${when(apiKey.revoked_at)}` : undefined}
+          className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${revoked ? "border-line text-muted" : "border-ok/20 bg-ok/5 text-ok"}`}>
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+          {revoked ? "Revocada" : "Activa"}
+        </span>
+        {!revoked && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={busy || refreshing} aria-expanded={menu !== null} aria-controls={`key-models-${apiKey.id}`}
+              onClick={() => { setError(null); setMenu(menu ? null : modelMenuDraft(apiKey.model_ids)); }}
+              className="min-h-9 rounded-lg border border-line bg-panel px-3 text-xs font-medium text-paper hover:border-accent/60">
+              {menu ? "Cancelar" : "Editar menú"}
+            </button>
+            <button type="button" onClick={revoke} disabled={busy || refreshing}
+              className="w-fit rounded-lg py-1.5 text-xs font-medium text-muted hover:text-danger sm:px-2">Revocar</button>
+          </div>
+        )}
       </div>
-      <span title={revoked ? `Revocada ${when(apiKey.revoked_at)}` : undefined}
-        className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${revoked ? "border-line text-muted" : "border-ok/20 bg-ok/5 text-ok"}`}>
-        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-        {revoked ? "Revocada" : "Activa"}
-      </span>
-      {!revoked && <button type="button" onClick={revoke} disabled={busy} className="w-fit rounded-lg py-1.5 text-xs font-medium text-muted hover:text-danger sm:px-2">
-        {busy ? "Revocando…" : "Revocar"}
-      </button>}
-      {error && <p role="alert" className="col-span-2 w-full text-sm text-danger">{error}</p>}
+      {menu && !revoked && (
+        <form id={`key-models-${apiKey.id}`} onSubmit={saveMenu} className="mt-4 grid min-w-0 gap-4 border-t border-line pt-4">
+          <KeyModelMenu models={models} draft={menu} onChange={setMenu} disabled={busy} />
+          <button type="submit" disabled={busy} className="min-h-10 justify-self-start rounded-xl bg-citron px-4 text-sm font-semibold text-on-accent hover:bg-accent hover:text-ink disabled:opacity-60">
+            {busy ? "Guardando…" : "Guardar menú"}
+          </button>
+        </form>
+      )}
+      {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
     </li>
   );
 }

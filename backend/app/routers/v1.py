@@ -14,7 +14,7 @@ from app.orm import ApiKey, Model, Provider
 from app.schemas import ChatRequest
 from app.security import hash_api_key
 from app.adapters import AdapterError
-from app.services.gateway import ModelNotFound, RouteFailed, open_with_fallback, resolve_model
+from app.services.gateway import ModelNotFound, RouteFailed, open_with_fallback, resolve_model, visible_models
 from app.services.usage import UsageAccumulator, record_usage
 from app.tokens import estimate_cost, estimate_messages
 
@@ -58,22 +58,15 @@ async def require_api_key(
 
 @router.get("/models")
 async def list_models(
-    _api_key: Annotated[ApiKey, Depends(require_api_key)],
+    api_key: Annotated[ApiKey, Depends(require_api_key)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ):
-    rows = (
-        await session.execute(
-            select(Model, Provider)
-            .join(Provider, Provider.id == Model.provider_id)
-            .where(
-                Model.enabled.is_(True),
-                Provider.enabled.is_(True),
-                Provider.kind != "video",
-                Provider.adapter != "video",
-            )
-            .order_by(Provider.name, Model.name)
-        )
-    ).all()
+    stmt = (
+        select(Model, Provider)
+        .join(Provider, Provider.id == Model.provider_id)
+        .order_by(Provider.name, Model.name)
+    )
+    rows = (await session.execute(visible_models(stmt, api_key))).all()
     created = int(time.time())
     data = []
     for model, provider in rows:
@@ -85,7 +78,7 @@ async def list_models(
                 "owned_by": provider.name,
             }
         )
-        if model.alias:
+        if model.alias and not api_key.restrict_models:
             data.append(
                 {
                     "id": model.alias,
@@ -138,7 +131,7 @@ async def chat_completions(
     sessionmaker = request.app.state.sessionmaker
 
     try:
-        primary = await resolve_model(session, settings, payload.model)
+        primary = await resolve_model(session, settings, payload.model, api_key=api_key)
     except ModelNotFound:
         raise APIError(404, "Model not found", "invalid_request_error", "model_not_found") from None
     except AdapterError as exc:
@@ -154,6 +147,7 @@ async def chat_completions(
             payload.temperature,
             payload.max_tokens,
             options,
+            api_key=api_key,
         )
     except RouteFailed as exc:
         await record_usage(

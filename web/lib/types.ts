@@ -34,7 +34,13 @@ export type CatalogModel = {
   currency: string;
 };
 
+export type GatewayModel = Pick<CatalogModel, "id" | "public_id" | "alias" | "name" | "provider_name"> & {
+  provider_label: string;
+  available: boolean;
+};
+
 export type ApiKeyRecord = {
+  model_ids?: string[] | null;
   id: string;
   name: string;
   app_name: string;

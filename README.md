@@ -19,8 +19,11 @@ Los adaptadores `groq`, `gemini`, `deepseek`, `together` y `vllm` usan el protoc
 
 1. En **Proveedores**, guarda la clave de cada servicio que vayas a usar y actívalo. Para Ollama indica la URL que FastAPI puede alcanzar. Pulsa **Probar conexión**.
 2. En **Modelos**, selecciona el proveedor y uno de sus modelos disponibles o escribe el ID exacto. Activa el modelo. Puedes darle un alias como `asistente` y asignarle otro modelo como respaldo. Para mover `asistente`, escribe ese alias en el modelo de destino y confirma **Mover alias y guardar**. La app seguirá enviando el mismo nombre.
-3. En **Claves**, genera una clave y guarda el valor completo en la variable `JOKMA_API_KEY` de tu app. Copia la URL base de **Conectar mi app** a `JOKMA_BASE_URL`. Por defecto es la dirección del panel con `/v1`. Si publicas FastAPI en otro dominio, puedes fijar la URL que muestra el panel con `PUBLIC_API_BASE_URL`, incluido `/v1`.
-4. Instala el paquete Python `openai` en la app y usa su cliente habitual.
+3. En **Claves**, crea una clave para tu app. Puedes darle acceso a todos los modelos o elegir un menú con modelos de varios proveedores, incluidos los locales. Guarda la clave en `JOKMA_API_KEY`. Después puedes editar su menú en **Claves** y seguir usando el mismo valor en tu app. Las claves anteriores conservan el acceso a todos los modelos habilitados hasta que les asignes una selección.
+4. Copia la URL base de **Conectar mi app** a `JOKMA_BASE_URL`. Por defecto es la dirección del panel con `/v1`. Si publicas FastAPI en otro dominio, puedes fijar la URL que muestra el panel con `PUBLIC_API_BASE_URL`, incluido `/v1`.
+5. Instala el paquete Python `openai` en la app y usa su cliente habitual.
+
+Con un menú personalizado, `GET /v1/models` devuelve una entrada `proveedor/modelo` por cada modelo seleccionado y habilitado cuyo proveedor de chat esté activo. Para el chat puedes enviar ese ID o su alias. Por ejemplo, para usar `asistente` con un modelo local como respaldo, incluye en el menú tanto el modelo al que apunta el alias como el modelo local. Ante un fallo que admite reintento, el router usa el primer respaldo habilitado que también permita la clave.
 
 ```python
 import os

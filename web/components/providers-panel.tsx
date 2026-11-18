@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { readError } from "@/lib/format";
 import { groupProviders, isVideoProvider, providerTitle } from "@/lib/provider-groups";
 import type { AdapterInfo, Provider } from "@/lib/types";
@@ -155,11 +155,11 @@ export function ProvidersPanel({ providers, adapters }: { providers: Provider[];
 
       {modal === "add" ? (
         <SettingsDialog title="Añadir proveedor" onClose={() => setModal(null)}>
-          <ProviderForm adapters={adapters} onCreated={() => { setModal(null); clearFilters(); }} />
+          <ProviderForm adapters={adapters} providers={catalog} onCreated={() => { setModal(null); clearFilters(); }} />
         </SettingsDialog>
       ) : selected ? (
         <SettingsDialog title={providerTitle(selected)} brand={<Brand provider={selected} />} onClose={() => setModal(null)}>
-          <ProviderSettings provider={selected} custom={custom.has(selected.id)} onDelete={() => setModal(null)} />
+          <ProviderSettings key={selected.id} provider={selected} providers={catalog} custom={custom.has(selected.id)} onDelete={() => setModal(null)} />
         </SettingsDialog>
       ) : null}
     </section>
@@ -198,8 +198,32 @@ async function changeProvider(path: string, method: string, payload?: Record<str
   return response;
 }
 
-function ProviderForm({ adapters, onCreated }: { adapters: AdapterInfo[]; onCreated: () => void }) {
+function providerForEndpoint(providers: Provider[], baseUrl: string) {
+  const endpoint = baseUrl.trim().replace(/\/+$/, "");
+  return providers.find((provider) => provider.key_url && provider.base_url.replace(/\/+$/, "") === endpoint);
+}
+
+function ApiKeyField({ issuer, placeholder }: { issuer?: Provider; placeholder: string }) {
+  const id = useId();
+  return (
+    <div className="pv-key-field">
+      <div className="pv-key-heading">
+        <label htmlFor={id}>Clave API</label>
+        {issuer?.key_url && (
+          <a className="pv-portal-link" href={issuer.key_url} target="_blank" rel="noopener noreferrer">
+            Ir a {providerTitle(issuer)} <Icon name="arrow" size={15} />
+            <span className="sr-only"> (se abre en otra pestaña)</span>
+          </a>
+        )}
+      </div>
+      <input id={id} name="api_key" type="password" autoComplete="new-password" placeholder={placeholder} />
+    </div>
+  );
+}
+
+function ProviderForm({ adapters, providers, onCreated }: { adapters: AdapterInfo[]; providers: Provider[]; onCreated: () => void }) {
   const router = useRouter();
+  const [baseUrl, setBaseUrl] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   async function create(event: React.FormEvent<HTMLFormElement>) {
@@ -221,8 +245,8 @@ function ProviderForm({ adapters, onCreated }: { adapters: AdapterInfo[]; onCrea
     <form onSubmit={create} className="pv-fields">
       <label>Nombre<input name="name" placeholder="mi-servidor" required autoComplete="off" /></label>
       <label>Adaptador<select name="adapter" defaultValue="openai">{adapters.map((a) => <option key={a.slug} value={a.slug}>{a.slug}{a.implemented ? "" : " (sin implementar)"}</option>)}</select></label>
-      <label>URL base accesible desde el router<input name="base_url" type="url" required placeholder="http://localhost:11434" /></label>
-      <label>Clave API<input name="api_key" type="password" autoComplete="new-password" placeholder="Opcional para servidores locales" /></label>
+      <label>URL base accesible desde el router<input name="base_url" type="url" required placeholder="http://localhost:11434" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
+      <ApiKeyField issuer={providerForEndpoint(providers, baseUrl)} placeholder="Opcional para servidores locales" />
       <label className="pv-check"><input name="enabled" type="checkbox" defaultChecked />Habilitado</label>
       {error && <p className="pv-error" role="alert">{error}</p>}
       <button className="pv-primary" disabled={pending}>{pending ? "Guardando…" : "Guardar proveedor"}</button>
@@ -230,8 +254,9 @@ function ProviderForm({ adapters, onCreated }: { adapters: AdapterInfo[]; onCrea
   );
 }
 
-function ProviderSettings({ provider, custom, onDelete }: { provider: Provider; custom: boolean; onDelete: () => void }) {
+function ProviderSettings({ provider, providers, custom, onDelete }: { provider: Provider; providers: Provider[]; custom: boolean; onDelete: () => void }) {
   const router = useRouter();
+  const [baseUrl, setBaseUrl] = useState(provider.base_url);
   const form = useRef<HTMLFormElement>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
@@ -289,9 +314,9 @@ function ProviderSettings({ provider, custom, onDelete }: { provider: Provider; 
     <form ref={form} onSubmit={save} className="pv-fields">
       <p className="pv-meta">{video ? "Este proveedor permite guardar credenciales para vídeo." : `Adaptador · ${provider.adapter}`}</p>
       {provider.name === "openrouter" && <p className="pv-meta">Usa el nombre completo del modelo, por ejemplo openai/gpt-4o.</p>}
-      <label>URL base<input name="base_url" defaultValue={provider.base_url} readOnly={!custom} type="url" required /></label>
-      <label>Clave API<input name="api_key" type="password" autoComplete="new-password" placeholder={provider.has_api_key ? `Guardada ····${provider.api_key_last4 || ""}` : "Pega tu clave"} /></label>
-      {provider.key_url && <a href={provider.key_url} target="_blank" rel="noopener noreferrer">Obtener clave <Icon name="arrow" size={13} /></a>}
+      <label>URL base<input name="base_url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} readOnly={!custom} type="url" required /></label>
+      <ApiKeyField issuer={provider.key_url ? provider : providerForEndpoint(providers, baseUrl)}
+        placeholder={provider.has_api_key ? `Guardada ····${provider.api_key_last4 || ""}` : "Pega tu clave"} />
       {provider.has_api_key && <label className="pv-check"><input name="clear_key" type="checkbox" />Borrar la clave guardada</label>}
       {!video && <label className="pv-check"><input name="enabled" type="checkbox" defaultChecked={provider.enabled} />Habilitar en el router</label>}
       {feedback && <p role="status" className={feedback.ok ? "pv-success" : "pv-error"}>{feedback.text}</p>}

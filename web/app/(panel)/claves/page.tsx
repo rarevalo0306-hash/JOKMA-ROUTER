@@ -1,8 +1,8 @@
 import { KeysPanel } from "@/components/keys-panel";
 import { adminGet } from "@/lib/admin";
 import { readEnv } from "@/lib/env";
-import { chatRoutableProviders } from "@/lib/provider-groups";
-import type { ApiKeyRecord, CatalogModel, Provider } from "@/lib/types";
+import { chatRoutableProviders, providerTitle } from "@/lib/provider-groups";
+import type { ApiKeyRecord, CatalogModel, GatewayModel, Provider } from "@/lib/types";
 
 export const metadata = { title: "Claves" };
 
@@ -12,11 +12,20 @@ export default async function KeysPage() {
     adminGet<CatalogModel[]>("/admin/models"),
     adminGet<Provider[]>("/admin/providers"),
   ]);
-  const enabledProviders = new Set(
-    chatRoutableProviders(providers).filter((provider) => provider.enabled).map((provider) => provider.id),
-  );
-  const modelIds = models
-    .filter((model) => model.enabled && enabledProviders.has(model.provider_id))
-    .map(({ public_id, alias }) => ({ public_id, alias }));
-  return <KeysPanel keys={keys} models={modelIds} publicBase={readEnv("PUBLIC_API_BASE_URL")?.replace(/\/+$/, "")} />;
+  const chatProviders = new Map(chatRoutableProviders(providers).map((provider) => [provider.id, provider]));
+  const menuModels: GatewayModel[] = models
+    .flatMap((model) => {
+      const provider = chatProviders.get(model.provider_id);
+      if (!provider) return [];
+      return [{
+        id: model.id,
+        public_id: model.public_id,
+        alias: model.alias,
+        name: model.name,
+        provider_name: model.provider_name,
+        provider_label: providerTitle(provider),
+        available: model.enabled && provider.enabled,
+      }];
+    });
+  return <KeysPanel keys={keys} models={menuModels} publicBase={readEnv("PUBLIC_API_BASE_URL")?.replace(/\/+$/, "")} />;
 }

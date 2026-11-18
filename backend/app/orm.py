@@ -6,6 +6,7 @@ from sqlalchemy import (
     JSON,
     DateTime,
     ForeignKey,
+    false,
     Index,
     Integer,
     Numeric,
@@ -103,9 +104,22 @@ class ApiKey(Base):
     app_name: Mapped[str] = mapped_column(Text)
     key_prefix: Mapped[str] = mapped_column(String(16))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    restrict_models: Mapped[bool] = mapped_column(default=False, server_default=false())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ApiKeyModel(Base):
+    __tablename__ = "api_key_models"
+    __table_args__ = (Index("ix_api_key_models_model", "model_id"),)
+
+    api_key_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("api_keys.id", ondelete="CASCADE"), primary_key=True
+    )
+    model_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("models.id", ondelete="CASCADE"), primary_key=True
+    )
 
 
 class UsageLog(Base):
